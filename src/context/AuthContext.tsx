@@ -20,6 +20,7 @@ import {
   initializeApp,
   login as storageLogin,
   logout as storageLogout,
+  clearAuthSessionSilent,
   getUserById,
   setAuthSession,
 } from "@/lib/storage";
@@ -33,22 +34,58 @@ interface AuthContextValue {
     userId: string,
     password: string,
     remember: boolean
-  ) => { ok: boolean; error?: string };
+  ) => { ok: boolean; error?: string; session?: AuthSession };
   logout: () => void;
   refreshUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function syncSessionFromStorage(): AuthSession | null {
+  const session = getAuthSession();
+  if (!session) return null;
+  const fresh = getUserById(session.id);
+  if (!fresh || fresh.status === "inactive") {
+    clearAuthSessionSilent();
+    return null;
+  }
+  const synced: AuthSession = {
+    id: fresh.id,
+    name: fresh.name,
+    email: fresh.email,
+    role: fresh.role,
+    status: fresh.status,
+    createdAt: fresh.createdAt,
+    isAuthenticated: true,
+    remembered: session.remembered,
+  };
+  setAuthSession(synced);
+  return synced;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    initializeApp();
-    const session = getAuthSession();
-    setUser(session);
-    setIsLoading(false);
+    try {
+      initializeApp();
+      setUser(syncSessionFromStorage());
+    } catch {
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Re-validate when tab becomes visible (role/status changes)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      setUser(syncSessionFromStorage());
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
   const login = useCallback(
@@ -57,37 +94,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (result.ok && result.session) {
         setUser(result.session);
       }
-      return { ok: result.ok, error: result.error };
+      return {
+        ok: result.ok,
+        error: result.error,
+        session: result.session,
+      };
     },
     []
   );
 
   const logout = useCallback(() => {
-    storageLogout();
+    storageLogout({ recordActivity: true });
     setUser(null);
   }, []);
 
   const refreshUser = useCallback(() => {
-    const session = getAuthSession();
-    if (!session) {
-      setUser(null);
-      return;
-    }
-    const fresh = getUserById(session.id);
-    if (!fresh || fresh.status === "inactive") {
-      storageLogout();
-      setUser(null);
-      return;
-    }
-    const updated: AuthSession = {
-      ...session,
-      name: fresh.name,
-      email: fresh.email,
-      role: fresh.role,
-      status: fresh.status,
-    };
-    setAuthSession(updated);
-    setUser(updated);
+    setUser(syncSessionFromStorage());
   }, []);
 
   const value = useMemo(

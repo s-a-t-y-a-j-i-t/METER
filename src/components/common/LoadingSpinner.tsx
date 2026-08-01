@@ -27,7 +27,7 @@ export function LoadingSpinner({
     >
       <div
         className={cn(
-          "animate-spin rounded-full border-slate-200 border-t-primary",
+          "animate-spin rounded-full border-border border-t-primary",
           sizeMap[size]
         )}
         aria-hidden="true"

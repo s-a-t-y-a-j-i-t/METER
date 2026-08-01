@@ -12,10 +12,10 @@ const icons: Record<ToastType, React.ReactNode> = {
 };
 
 const styles: Record<ToastType, string> = {
-  success: "border-emerald-200 bg-emerald-50",
-  error: "border-red-200 bg-red-50",
-  warning: "border-amber-200 bg-amber-50",
-  info: "border-indigo-200 bg-indigo-50",
+  success: "border-emerald-200/60 bg-success-bg",
+  error: "border-red-200/60 bg-danger-bg",
+  warning: "border-amber-200/60 bg-warning-bg",
+  info: "border-indigo-200/60 bg-info-bg",
 };
 
 export function ToastContainer() {
@@ -33,17 +33,17 @@ export function ToastContainer() {
         <div
           key={t.id}
           className={cn(
-            "pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg animate-toast-in",
+            "pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-[var(--shadow-elevated)] animate-toast-in",
             styles[t.type]
           )}
           role="status"
         >
           <span className="mt-0.5 shrink-0">{icons[t.type]}</span>
-          <p className="flex-1 text-sm font-medium text-slate-800">{t.message}</p>
+          <p className="flex-1 text-sm font-medium text-text">{t.message}</p>
           <button
             type="button"
             onClick={() => dismiss(t.id)}
-            className="shrink-0 rounded p-1 text-slate-500 hover:bg-white/60"
+            className="shrink-0 rounded p-1 text-muted hover:bg-surface/60"
             aria-label="Dismiss notification"
           >
             <X className="h-4 w-4" />

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/common/Button";
+import { Card, CardHeader } from "@/components/common/Card";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { getUserById, updateUser } from "@/lib/storage";
@@ -17,20 +18,26 @@ export default function ProfilePage() {
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [createdAt, setCreatedAt] = useState("");
+  const [status, setStatus] = useState("");
 
   useEffect(() => {
     if (!user) return;
     const full = getUserById(user.id);
     setName(full?.name || user.name);
-    setEmail(full?.email || user.email);
+    setEmail(full?.email || user.email || "");
     setCreatedAt(full?.createdAt || user.createdAt);
+    setStatus(full?.status || user.status);
   }, [user]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!name.trim() || !email.trim()) {
-      toast("Name and email are required.", "error");
+    if (!name.trim()) {
+      toast("Full name is required.", "error");
+      return;
+    }
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      toast("Enter a valid email address.", "error");
       return;
     }
     if (password && password !== confirm) {
@@ -63,86 +70,91 @@ export default function ProfilePage() {
     toast("Profile updated successfully.", "success");
   };
 
-  const field =
-    "h-11 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20";
-
   return (
     <AppShell title="Profile" allowedRoles={["user", "admin"]}>
       <div className="mx-auto max-w-2xl space-y-6">
-        <div className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6">
-          <h2 className="text-base font-semibold text-slate-900">Account Details</h2>
-          <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Info label="User ID" value={user?.id || "—"} />
-            <Info label="Role" value={user?.role || "—"} />
-            <Info label="Account Status" value={user?.status || "—"} />
-            <Info label="Created Date" value={formatDisplayDate(createdAt)} />
-          </dl>
+        <div>
+          <h2 className="text-page-title">Profile</h2>
+          <p className="mt-1 text-body">
+            View your account details and update contact information.
+          </p>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"
-        >
-          <h2 className="mb-4 text-base font-semibold text-slate-900">
-            Update Profile
-          </h2>
-          <div className="space-y-4">
+        <Card>
+          <CardHeader title="Account Information" />
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <Info label="Full Name" value={user?.name || "—"} />
+            <Info label="User ID" value={user?.id || "—"} />
+            <Info label="Email" value={user?.email || "—"} />
+            <Info label="Role" value={user?.role || "—"} />
+            <Info label="Status" value={status || "—"} />
+            <Info label="Created Date" value={formatDisplayDate(createdAt)} />
+          </dl>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Update Profile"
+            description="Passwords are never shown. Leave blank to keep your current password."
+          />
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="name" className="mb-1.5 block text-sm font-medium">
+              <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-text-secondary">
                 Full Name
               </label>
               <input
                 id="name"
-                className={field}
+                className="field-input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
               />
             </div>
             <div>
-              <label htmlFor="email" className="mb-1.5 block text-sm font-medium">
+              <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-text-secondary">
                 Email
               </label>
               <input
                 id="email"
                 type="email"
-                className={field}
+                className="field-input"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
+                placeholder="optional"
               />
             </div>
             <div>
-              <label htmlFor="password" className="mb-1.5 block text-sm font-medium">
-                New Password (optional)
+              <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-text-secondary">
+                New Password
               </label>
               <input
                 id="password"
                 type="password"
-                className={field}
+                className="field-input"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
+                placeholder="Leave blank to keep current"
               />
             </div>
             <div>
-              <label htmlFor="confirm" className="mb-1.5 block text-sm font-medium">
+              <label htmlFor="confirm" className="mb-1.5 block text-sm font-medium text-text-secondary">
                 Confirm Password
               </label>
               <input
                 id="confirm"
                 type="password"
-                className={field}
+                className="field-input"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 autoComplete="new-password"
               />
             </div>
-          </div>
-          <Button type="submit" className="mt-6" loading={loading}>
-            Save Changes
-          </Button>
-        </form>
+            <Button type="submit" className="min-h-11" loading={loading}>
+              {loading ? "Saving changes..." : "Save Changes"}
+            </Button>
+          </form>
+        </Card>
       </div>
     </AppShell>
   );
@@ -151,8 +163,8 @@ export default function ProfilePage() {
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-muted">{label}</dt>
-      <dd className="mt-0.5 text-sm font-semibold capitalize text-slate-900">
+      <dt className="text-caption font-medium">{label}</dt>
+      <dd className="mt-0.5 text-sm font-semibold capitalize text-text">
         {value}
       </dd>
     </div>

@@ -70,6 +70,22 @@ export interface OverlaySettings {
   align: "left" | "center" | "right";
 }
 
+/** Image look adjustments applied during meter editing (and exports). */
+export interface ImageAdjustments {
+  /** -50 (darker) … 0 … +50 (brighter) */
+  brightness: number;
+  /** -50 (flatter) … 0 … +50 (more contrast) */
+  contrast: number;
+  /** -50 (cool) … 0 … +50 (warm) */
+  temperature: number;
+}
+
+export const DEFAULT_IMAGE_ADJUSTMENTS: ImageAdjustments = {
+  brightness: 0,
+  contrast: 0,
+  temperature: 0,
+};
+
 export const DEFAULT_OVERLAY: OverlaySettings = {
   text: "",
   fontSize: 32,
@@ -91,6 +107,40 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ocrLanguage: "eng",
 };
 
+export type ActivityAction =
+  | "LOGIN"
+  | "LOGOUT"
+  | "METER_PROCESSED"
+  | "METER_DOWNLOADED"
+  | "USER_CREATED"
+  | "USER_UPDATED"
+  | "PASSWORD_RESET"
+  | "USER_ACTIVATED"
+  | "USER_DEACTIVATED"
+  | "USER_DELETED";
+
+export interface ActivityLog {
+  id: string;
+  userId: string;
+  userName: string;
+  action: ActivityAction;
+  description: string;
+  timestamp: string;
+}
+
+export const ACTIVITY_ACTION_LABELS: Record<ActivityAction, string> = {
+  LOGIN: "Login",
+  LOGOUT: "Logout",
+  METER_PROCESSED: "Meter Processed",
+  METER_DOWNLOADED: "Download",
+  USER_CREATED: "User Created",
+  USER_UPDATED: "User Updated",
+  PASSWORD_RESET: "Password Reset",
+  USER_ACTIVATED: "Activated",
+  USER_DEACTIVATED: "Deactivated",
+  USER_DELETED: "User Deleted",
+};
+
 export const STORAGE_KEYS = {
   USERS: "app_users",
   AUTH: "auth_user",
@@ -98,4 +148,5 @@ export const STORAGE_KEYS = {
   SETTINGS: "app_settings",
   INITIALIZED: "app_initialized",
   STATS: "user_stats",
+  ACTIVITY: "activity_logs",
 } as const;

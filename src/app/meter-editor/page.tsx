@@ -5,9 +5,10 @@ import { MeterEditorWorkspace } from "@/components/meter/MeterEditorWorkspace";
 
 export default function MeterEditorPage() {
   return (
-    <AppShell title="Meter Reading Editor" allowedRoles={["user", "admin"]}>
+    <AppShell title="Meter Editor" allowedRoles={["user", "admin"]}>
       <div className="mb-4 sm:mb-6">
-        <p className="text-sm text-muted">
+        <h2 className="text-page-title">Meter Reading Editor</h2>
+        <p className="mt-1 text-body">
           Upload a meter image, detect the reading with OCR, edit the overlay,
           and download the final result.
         </p>

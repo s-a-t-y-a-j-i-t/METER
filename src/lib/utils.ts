@@ -1,22 +1,95 @@
-import { OverlaySettings } from "./types";
+import { OverlaySettings, ImageAdjustments } from "./types";
 
-/** Extract the most likely meter reading number from OCR text. */
+/** UI font/padding sizes are authored against this reference width (CSS preview). */
+export const OVERLAY_REFERENCE_WIDTH = 800;
+
+export function getOverlayScale(imageWidth: number): number {
+  if (!imageWidth || imageWidth <= 0) return 1;
+  return imageWidth / OVERLAY_REFERENCE_WIDTH;
+}
+
+/**
+ * Extract the most likely meter reading from OCR text.
+ * Prefers numeric candidates (incl. comma thousands); never returns random words.
+ */
 export function extractMeterReading(text: string): string | null {
   if (!text?.trim()) return null;
 
-  const cleaned = text.replace(/[^\d.\n\s]/g, " ");
-  const candidates = cleaned.match(/\d{3,}(?:\.\d+)?/g);
+  // Soft OCR cleanup for common digit confusions near digits
+  const normalized = text
+    .replace(/[|]/g, "1")
+    .replace(/(\d)[Oo]/g, "$10")
+    .replace(/[Oo](\d)/g, "0$1")
+    .replace(/(\d)[Il]/g, "$11")
+    .replace(/[Il](\d)/g, "1$1")
+    .replace(/(\d)[Ss]/g, "$15")
+    .replace(/[Ss](\d)/g, "5$1")
+    .replace(/(\d)[Bb]/g, "$18")
+    .replace(/[Bb](\d)/g, "8$1");
 
-  if (!candidates || candidates.length === 0) return null;
+  const candidates = new Set<string>();
 
-  // Prefer longer numeric sequences typical of meter readings
-  const sorted = [...candidates].sort((a, b) => {
-    const aScore = a.replace(".", "").length + (a.includes(".") ? 0.5 : 0);
-    const bScore = b.replace(".", "").length + (b.includes(".") ? 0.5 : 0);
-    return bScore - aScore;
+  const withCommas = normalized.match(/\d{1,3}(?:,\d{3})+(?:\.\d{1,3})?/g);
+  withCommas?.forEach((c) => candidates.add(c));
+
+  const plain = normalized.match(/\d{2,}(?:\.\d{1,3})?/g);
+  plain?.forEach((c) => candidates.add(c));
+
+  if (candidates.size === 0) return null;
+
+  const scored = [...candidates].map((raw) => {
+    const compact = raw.replace(/,/g, "");
+    const digitCount = compact.replace(".", "").length;
+    let score = digitCount * 2;
+
+    // Typical meter readings are 4–8 significant digits
+    if (digitCount >= 4 && digitCount <= 8) score += 8;
+    else if (digitCount === 3) score += 3;
+    else if (digitCount > 10) score -= 6;
+
+    if (compact.includes(".")) score += 2;
+    if (/^0+\d/.test(compact)) score += 3; // leading zeros common on meters
+    if (/^(19|20)\d{2}$/.test(compact)) score -= 5; // likely a year
+    if (raw.includes(",")) score += 1;
+
+    return { raw, compact, score };
   });
 
-  return sorted[0] ?? null;
+  scored.sort((a, b) => b.score - a.score || b.compact.length - a.compact.length);
+  const best = scored[0];
+  if (!best || best.score < 4) return null;
+
+  // Prefer preserving original grouping from OCR when commas present
+  return best.raw;
+}
+
+/** Validate a manually entered meter reading. */
+export function validateMeterReading(value: string): {
+  ok: boolean;
+  error?: string;
+} {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { ok: false, error: "Please enter a meter reading." };
+  }
+
+  const commaForm = /^\d{1,3}(,\d{3})+(\.\d{1,4})?$/;
+  const plainForm = /^\d+(\.\d{1,4})?$/;
+
+  if (!commaForm.test(trimmed) && !plainForm.test(trimmed)) {
+    return {
+      ok: false,
+      error:
+        "Enter a valid reading using numbers, optional commas, and one decimal point.",
+    };
+  }
+
+  const numeric = Number(trimmed.replace(/,/g, ""));
+  if (!Number.isFinite(numeric)) {
+    return { ok: false, error: "Enter a valid numeric meter reading." };
+  }
+
+  return { ok: true };
 }
 
 export function formatTimestampFilename(ext: "png" | "jpg"): string {
@@ -35,10 +108,13 @@ export function getOverlayBackgroundColor(settings: OverlaySettings): string {
     case "white":
       return `rgba(255, 255, 255, ${settings.opacity})`;
     case "custom": {
-      const hex = settings.customBackground;
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
+      const hex = settings.customBackground || "#000000";
+      const r = Number.parseInt(hex.slice(1, 3), 16);
+      const g = Number.parseInt(hex.slice(3, 5), 16);
+      const b = Number.parseInt(hex.slice(5, 7), 16);
+      if ([r, g, b].some((n) => Number.isNaN(n))) {
+        return `rgba(0, 0, 0, ${settings.opacity})`;
+      }
       return `rgba(${r}, ${g}, ${b}, ${settings.opacity})`;
     }
     default:
@@ -46,13 +122,68 @@ export function getOverlayBackgroundColor(settings: OverlaySettings): string {
   }
 }
 
+/**
+ * Draw the meter photo with brightness / contrast / temperature.
+ * Overlay text should be drawn afterwards so it is not color-shifted.
+ */
+export function drawAdjustedImage(
+  ctx: CanvasRenderingContext2D,
+  img: CanvasImageSource,
+  width: number,
+  height: number,
+  adjustments: ImageAdjustments
+): void {
+  const brightness = Math.max(
+    0.4,
+    Math.min(1.6, 1 + adjustments.brightness / 100)
+  );
+  const contrast = Math.max(
+    0.4,
+    Math.min(1.6, 1 + adjustments.contrast / 100)
+  );
+
+  ctx.save();
+  ctx.filter = `brightness(${brightness}) contrast(${contrast})`;
+  ctx.drawImage(img, 0, 0, width, height);
+  ctx.filter = "none";
+  ctx.restore();
+
+  const temp = Math.max(-50, Math.min(50, adjustments.temperature));
+  if (temp === 0) return;
+
+  const strength = (Math.abs(temp) / 50) * 0.28;
+  ctx.save();
+  ctx.globalCompositeOperation = "soft-light";
+  ctx.fillStyle =
+    temp > 0
+      ? `rgba(255, 170, 60, ${strength})`
+      : `rgba(60, 140, 255, ${strength})`;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
 export function downloadCanvas(
   canvas: HTMLCanvasElement,
   format: "png" | "jpg"
 ): void {
+  let exportCanvas = canvas;
+
+  // JPEG has no alpha — white background + image + overlay
+  if (format === "jpg") {
+    const offscreen = document.createElement("canvas");
+    offscreen.width = canvas.width;
+    offscreen.height = canvas.height;
+    const ctx = offscreen.getContext("2d");
+    if (!ctx) throw new Error("Canvas unavailable");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, offscreen.width, offscreen.height);
+    ctx.drawImage(canvas, 0, 0);
+    exportCanvas = offscreen;
+  }
+
   const mime = format === "png" ? "image/png" : "image/jpeg";
   const quality = format === "jpg" ? 0.95 : undefined;
-  const dataUrl = canvas.toDataURL(mime, quality);
+  const dataUrl = exportCanvas.toDataURL(mime, quality);
   const link = document.createElement("a");
   link.download = formatTimestampFilename(format);
   link.href = dataUrl;
@@ -64,6 +195,7 @@ export function downloadCanvas(
 export function formatDisplayDate(iso: string): string {
   try {
     const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
     return d.toLocaleDateString("en-GB", {
       day: "2-digit",
       month: "short",
@@ -74,6 +206,45 @@ export function formatDisplayDate(iso: string): string {
   }
 }
 
+export function formatDisplayDateTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/** Clamp overlay center (%) so the text box stays inside the image. */
+export function clampOverlayPercent(
+  x: number,
+  y: number,
+  boxWidthPx: number,
+  boxHeightPx: number,
+  imageWidth: number,
+  imageHeight: number
+): { x: number; y: number } {
+  if (imageWidth <= 0 || imageHeight <= 0) {
+    return {
+      x: Math.max(0, Math.min(100, x)),
+      y: Math.max(0, Math.min(100, y)),
+    };
+  }
+  const halfW = Math.min(50, (boxWidthPx / imageWidth) * 50);
+  const halfH = Math.min(50, (boxHeightPx / imageHeight) * 50);
+  return {
+    x: Math.max(halfW, Math.min(100 - halfW, x)),
+    y: Math.max(halfH, Math.min(100 - halfH, y)),
+  };
+}
+
 export function generateId(prefix = "id"): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -82,16 +253,39 @@ export function validateImageFile(file: File): { ok: boolean; error?: string } {
   const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
   const maxSize = 10 * 1024 * 1024;
 
+  if (!file || file.size === 0) {
+    return { ok: false, error: "Please upload a valid JPG, PNG, or WEBP image." };
+  }
   if (!allowed.includes(file.type) && !/\.(jpe?g|png|webp)$/i.test(file.name)) {
     return {
       ok: false,
-      error: "Unsupported file format. Please upload JPG, JPEG, PNG, or WEBP.",
+      error: "Please upload a valid JPG, PNG, or WEBP image.",
     };
   }
   if (file.size > maxSize) {
     return { ok: false, error: "File is too large. Maximum size is 10 MB." };
   }
   return { ok: true };
+}
+
+/** Verify the browser can decode the image (catches corrupt files). */
+export function verifyImageDecodable(objectUrl: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const ok = img.naturalWidth > 0 && img.naturalHeight > 0;
+      // Soft safety: extremely huge bitmaps can freeze the tab
+      const megapixels =
+        (img.naturalWidth * img.naturalHeight) / 1_000_000;
+      if (!ok || megapixels > 80) {
+        resolve(false);
+        return;
+      }
+      resolve(true);
+    };
+    img.onerror = () => resolve(false);
+    img.src = objectUrl;
+  });
 }
 
 export function cn(...classes: (string | false | null | undefined)[]): string {

@@ -6,12 +6,13 @@ import { Button } from "@/components/common/Button";
 import { Modal } from "@/components/common/Modal";
 import { useToast } from "@/context/ToastContext";
 import { downloadCanvas } from "@/lib/utils";
-import { OverlaySettings } from "@/lib/types";
+import { OverlaySettings, ImageAdjustments, DEFAULT_IMAGE_ADJUSTMENTS } from "@/lib/types";
 import { renderFinalCanvas } from "./MeterCanvas";
 
 interface DownloadButtonsProps {
   imageUrl: string | null;
   settings: OverlaySettings;
+  adjustments?: ImageAdjustments;
   showOverlay: boolean;
   disabled?: boolean;
   onEditAgain: () => void;
@@ -22,6 +23,7 @@ interface DownloadButtonsProps {
 export function DownloadButtons({
   imageUrl,
   settings,
+  adjustments = DEFAULT_IMAGE_ADJUSTMENTS,
   showOverlay,
   disabled,
   onEditAgain,
@@ -31,31 +33,42 @@ export function DownloadButtons({
   const { toast } = useToast();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [exportSize, setExportSize] = useState<{ w: number; h: number } | null>(
+    null
+  );
   const [busy, setBusy] = useState<"preview" | "png" | "jpg" | null>(null);
+
+  const clearPreview = () => {
+    setPreviewOpen(false);
+    setPreviewUrl(null);
+    setExportSize(null);
+  };
 
   const ensureCanvas = async () => {
     if (!imageUrl) throw new Error("No image");
-    if (!settings.text.trim()) throw new Error("Empty reading");
-    return renderFinalCanvas(imageUrl, settings, showOverlay);
+    if (!showOverlay || !settings.text.trim()) {
+      throw new Error("Empty reading");
+    }
+    return renderFinalCanvas(imageUrl, settings, true, adjustments);
   };
 
   const handlePreview = async () => {
-    if (!imageUrl) return;
+    if (!imageUrl || busy) return;
     setBusy("preview");
     try {
       const canvas = await ensureCanvas();
-      const url = canvas.toDataURL("image/png");
-      setPreviewUrl(url);
+      setExportSize({ w: canvas.width, h: canvas.height });
+      setPreviewUrl(canvas.toDataURL("image/png"));
       setPreviewOpen(true);
     } catch {
-      toast("Unable to generate preview. Please apply a reading first.", "error");
+      toast("Unable to generate the image. Please try again.", "error");
     } finally {
       setBusy(null);
     }
   };
 
   const handleDownload = async (format: "png" | "jpg") => {
-    if (!imageUrl) return;
+    if (!imageUrl || busy) return;
     setBusy(format);
     try {
       const canvas = await ensureCanvas();
@@ -63,76 +76,139 @@ export function DownloadButtons({
       onDownloaded(format);
       toast(`Downloaded ${format.toUpperCase()} successfully.`, "success");
     } catch {
-      toast("Download failed. Please try again.", "error");
+      toast("Unable to generate the image. Please try again.", "error");
     } finally {
       setBusy(null);
     }
   };
 
-  const canExport = !!imageUrl && showOverlay && !!settings.text.trim() && !disabled;
+  const canExport =
+    !!imageUrl && showOverlay && !!settings.text.trim() && !disabled;
+  const actionsLocked = busy !== null;
 
   return (
     <>
-      <div className="rounded-2xl border border-border bg-white p-4 shadow-sm sm:p-5">
-        <h3 className="mb-3 text-sm font-semibold text-slate-900">Final Preview</h3>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-card)] sm:p-5">
+        <h3 className="mb-1 text-card-title">Actions</h3>
+        <p className="mb-4 text-caption">
+          Preview and download at original image resolution. Zoom only affects
+          the editor view.
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
           <Button
             type="button"
             variant="outline"
             onClick={handlePreview}
-            disabled={!canExport}
+            disabled={!canExport || actionsLocked}
             loading={busy === "preview"}
+            className="min-h-11"
+            aria-label="Preview final image"
           >
-            <Eye className="h-4 w-4" />
-            Preview
+            <Eye className="h-4 w-4" aria-hidden="true" />
+            {busy === "preview" ? "Generating preview..." : "Preview"}
           </Button>
-          <Button type="button" variant="outline" onClick={onEditAgain} disabled={!imageUrl}>
-            <Pencil className="h-4 w-4" />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onEditAgain}
+            disabled={!imageUrl || actionsLocked}
+            className="min-h-11"
+            aria-label="Continue editing"
+          >
+            <Pencil className="h-4 w-4" aria-hidden="true" />
             Edit Again
           </Button>
-          <Button type="button" variant="secondary" onClick={onReset}>
-            <RotateCcw className="h-4 w-4" />
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onReset}
+            disabled={actionsLocked}
+            className="min-h-11"
+            aria-label="Reset editor and start over"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Reset
           </Button>
           <Button
             type="button"
             onClick={() => handleDownload("png")}
-            disabled={!canExport}
+            disabled={!canExport || actionsLocked}
             loading={busy === "png"}
+            className="min-h-11"
+            aria-label="Download PNG"
           >
-            <Download className="h-4 w-4" />
-            PNG
+            <Download className="h-4 w-4" aria-hidden="true" />
+            {busy === "png" ? "Preparing download..." : "Download PNG"}
           </Button>
           <Button
             type="button"
             onClick={() => handleDownload("jpg")}
-            disabled={!canExport}
+            disabled={!canExport || actionsLocked}
             loading={busy === "jpg"}
-            className="col-span-2 sm:col-span-1"
+            className="min-h-11"
+            aria-label="Download JPG"
           >
-            <Download className="h-4 w-4" />
-            JPG
+            <Download className="h-4 w-4" aria-hidden="true" />
+            {busy === "jpg" ? "Preparing download..." : "Download JPG"}
           </Button>
         </div>
       </div>
 
       <Modal
         open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
+        onClose={clearPreview}
         title="Final Preview"
         size="xl"
         footer={
-          <Button variant="outline" onClick={() => setPreviewOpen(false)}>
-            Close
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                clearPreview();
+                onEditAgain();
+              }}
+              disabled={actionsLocked}
+              className="min-h-11"
+              aria-label="Edit again"
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+              Edit Again
+            </Button>
+            <Button
+              onClick={() => handleDownload("png")}
+              loading={busy === "png"}
+              disabled={actionsLocked && busy !== "png"}
+              className="min-h-11"
+              aria-label="Download PNG"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download PNG
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => handleDownload("jpg")}
+              loading={busy === "jpg"}
+              disabled={actionsLocked && busy !== "jpg"}
+              className="min-h-11"
+              aria-label="Download JPG"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download JPG
+            </Button>
+          </div>
         }
       >
+        {exportSize && (
+          <p className="mb-3 text-xs text-muted">
+            Export size: {exportSize.w}×{exportSize.h} (original resolution)
+          </p>
+        )}
         {previewUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={previewUrl}
             alt="Final meter reading preview"
-            className="mx-auto max-h-[70vh] w-full rounded-lg object-contain"
+            className="mx-auto max-h-[60vh] w-full rounded-lg object-contain"
           />
         )}
       </Modal>

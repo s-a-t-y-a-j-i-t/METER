@@ -33,17 +33,5 @@ export default function LoginPage() {
 
   if (isAuthenticated) return null;
 
-  return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-indigo-50/40 to-slate-100 px-4 py-10">
-      <div
-        className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-indigo-200/40 blur-3xl"
-        aria-hidden="true"
-      />
-      <div
-        className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl"
-        aria-hidden="true"
-      />
-      <LoginForm />
-    </div>
-  );
+  return <LoginForm />;
 }

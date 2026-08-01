@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { History as HistoryIcon, Trash2, Eye } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { History as HistoryIcon, Trash2, Eye, Search } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { EmptyState } from "@/components/common/EmptyState";
-import { ConfirmDialog } from "@/components/common/Modal";
-import { Modal } from "@/components/common/Modal";
+import { ConfirmDialog, Modal } from "@/components/common/Modal";
 import { Button } from "@/components/common/Button";
+import { Card } from "@/components/common/Card";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -15,7 +15,7 @@ import {
   clearUserHistory,
 } from "@/lib/storage";
 import { MeterHistoryItem } from "@/lib/types";
-import { formatDisplayDate, cn } from "@/lib/utils";
+import { formatDisplayDateTime, cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
 export default function HistoryPage() {
@@ -23,6 +23,8 @@ export default function HistoryPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [items, setItems] = useState<MeterHistoryItem[]>([]);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "failed" | "partial">("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [clearAll, setClearAll] = useState(false);
   const [viewItem, setViewItem] = useState<MeterHistoryItem | null>(null);
@@ -35,6 +37,19 @@ export default function HistoryPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((item) => {
+      if (statusFilter !== "all" && item.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        item.filename.toLowerCase().includes(q) ||
+        item.finalReading.toLowerCase().includes(q) ||
+        item.detectedReading.toLowerCase().includes(q)
+      );
+    });
+  }, [items, query, statusFilter]);
 
   const confirmDelete = () => {
     if (!deleteId) return;
@@ -55,48 +70,100 @@ export default function HistoryPage() {
   return (
     <AppShell title="History" allowedRoles={["user", "admin"]}>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted">
-          Your processed meter images (metadata only).
-        </p>
+        <div>
+          <h2 className="text-page-title">History</h2>
+          <p className="mt-1 text-body">
+            Your processed meter images (metadata only).
+          </p>
+        </div>
         {items.length > 0 && (
-          <Button variant="outline" onClick={() => setClearAll(true)}>
+          <Button variant="outline" className="min-h-11" onClick={() => setClearAll(true)}>
             <Trash2 className="h-4 w-4" />
-            Clear All
+            Clear History
           </Button>
         )}
       </div>
 
+      {items.length > 0 && (
+        <Card className="mb-4" padding="sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by file or reading..."
+                className="field-input pl-10"
+                aria-label="Search history"
+              />
+            </div>
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Status filter">
+              {(["all", "completed", "failed", "partial"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setStatusFilter(s)}
+                  className={cn(
+                    "min-h-10 rounded-lg px-3 text-sm font-medium capitalize transition",
+                    statusFilter === s
+                      ? "bg-primary-light text-primary"
+                      : "bg-bg-muted text-text-secondary hover:text-text"
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Card>
+      )}
+
       {items.length === 0 ? (
         <EmptyState
           icon={HistoryIcon}
-          title="No Processing History"
+          title="No processing history"
           description="Your processed meter images will appear here."
           actionLabel="Upload Meter Image"
           onAction={() => router.push("/meter-editor")}
         />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={Search}
+          title="No matching records"
+          description="Try a different search or status filter."
+          actionLabel="Clear filters"
+          onAction={() => {
+            setQuery("");
+            setStatusFilter("all");
+          }}
+        />
       ) : (
         <>
-          {/* Desktop table */}
-          <div className="hidden overflow-hidden rounded-2xl border border-border bg-white shadow-sm md:block">
+          <div className="hidden overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-card)] md:block">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left text-sm">
-                <thead className="border-b border-border bg-slate-50 text-xs uppercase tracking-wide text-muted">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="border-b border-border bg-bg-muted text-xs uppercase tracking-wide text-muted">
                   <tr>
-                    <th className="px-4 py-3 font-semibold">Date</th>
-                    <th className="px-4 py-3 font-semibold">File</th>
-                    <th className="px-4 py-3 font-semibold">Reading</th>
+                    <th className="px-4 py-3 font-semibold">Original File</th>
+                    <th className="px-4 py-3 font-semibold">Final Reading</th>
+                    <th className="px-4 py-3 font-semibold">Date / Time</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Action</th>
+                    <th className="px-4 py-3 font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {items.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3 text-muted">
-                        {formatDisplayDate(item.date)}
+                  {filtered.map((item) => (
+                    <tr key={item.id} className="hover:bg-bg-muted/60">
+                      <td className="px-4 py-3 font-medium text-text">
+                        {item.filename}
                       </td>
-                      <td className="px-4 py-3 font-medium">{item.filename}</td>
-                      <td className="px-4 py-3 font-mono">{item.finalReading}</td>
+                      <td className="px-4 py-3 font-mono text-text">
+                        {item.finalReading}
+                      </td>
+                      <td className="px-4 py-3 text-muted">
+                        {formatDisplayDateTime(item.date)}
+                      </td>
                       <td className="px-4 py-3">
                         <StatusPill status={item.status} />
                       </td>
@@ -104,7 +171,7 @@ export default function HistoryPage() {
                         <div className="flex gap-1">
                           <button
                             type="button"
-                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                            className="rounded-lg p-2 text-muted hover:bg-bg-muted hover:text-text"
                             onClick={() => setViewItem(item)}
                             aria-label="View details"
                           >
@@ -112,7 +179,7 @@ export default function HistoryPage() {
                           </button>
                           <button
                             type="button"
-                            className="rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-danger"
+                            className="rounded-lg p-2 text-muted hover:bg-danger-bg hover:text-danger"
                             onClick={() => setDeleteId(item.id)}
                             aria-label="Delete history item"
                           >
@@ -127,23 +194,21 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          {/* Mobile cards */}
           <div className="space-y-3 md:hidden">
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-2xl border border-border bg-white p-4 shadow-sm"
-              >
+            {filtered.map((item) => (
+              <Card key={item.id} padding="sm">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate font-semibold">{item.filename}</p>
-                    <p className="text-xs text-muted">
-                      {formatDisplayDate(item.date)}
+                    <p className="truncate font-semibold text-text">
+                      {item.filename}
+                    </p>
+                    <p className="text-caption">
+                      {formatDisplayDateTime(item.date)}
                     </p>
                   </div>
                   <StatusPill status={item.status} />
                 </div>
-                <p className="mt-2 font-mono text-lg font-semibold">
+                <p className="mt-2 font-mono text-lg font-semibold text-text">
                   {item.finalReading}
                 </p>
                 <div className="mt-3 flex gap-2 border-t border-border pt-3">
@@ -162,7 +227,7 @@ export default function HistoryPage() {
                     Delete
                   </Button>
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         </>
@@ -182,9 +247,9 @@ export default function HistoryPage() {
         open={clearAll}
         onClose={() => setClearAll(false)}
         onConfirm={confirmClear}
-        title="Clear All History"
+        title="Clear History"
         message="This will remove all of your processing history. This cannot be undone."
-        confirmLabel="Clear All"
+        confirmLabel="Clear History"
         danger
       />
 
@@ -201,10 +266,10 @@ export default function HistoryPage() {
       >
         {viewItem && (
           <dl className="space-y-3 text-sm">
-            <Detail label="Date" value={formatDisplayDate(viewItem.date)} />
-            <Detail label="File" value={viewItem.filename} />
-            <Detail label="Detected Reading" value={viewItem.detectedReading} />
+            <Detail label="Original File" value={viewItem.filename} />
             <Detail label="Final Reading" value={viewItem.finalReading} />
+            <Detail label="Detected Reading" value={viewItem.detectedReading} />
+            <Detail label="Date / Time" value={formatDisplayDateTime(viewItem.date)} />
             <Detail label="Status" value={viewItem.status} />
             {viewItem.confidence != null && (
               <Detail label="OCR Confidence" value={`${viewItem.confidence}%`} />
@@ -222,10 +287,10 @@ function StatusPill({ status }: { status: string }) {
       className={cn(
         "inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize",
         status === "completed"
-          ? "bg-emerald-50 text-emerald-700"
+          ? "bg-success-bg text-success"
           : status === "failed"
-            ? "bg-red-50 text-red-700"
-            : "bg-amber-50 text-amber-700"
+            ? "bg-danger-bg text-danger"
+            : "bg-warning-bg text-warning"
       )}
     >
       {status}
@@ -236,8 +301,8 @@ function StatusPill({ status }: { status: string }) {
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-muted">{label}</dt>
-      <dd className="mt-0.5 font-medium text-slate-900 capitalize">{value}</dd>
+      <dt className="text-caption font-medium">{label}</dt>
+      <dd className="mt-0.5 font-medium capitalize text-text">{value}</dd>
     </div>
   );
 }

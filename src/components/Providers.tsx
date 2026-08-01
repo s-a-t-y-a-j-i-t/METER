@@ -6,42 +6,41 @@
  * suitable for secure production authentication.
  */
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import { ToastContainer } from "@/components/common/Toast";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { APP_NAME } from "@/lib/branding";
 
-function AuthRedirect({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, user } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (isLoading) return;
-    // Root page redirects handled by page.tsx
-  }, [isLoading, isAuthenticated, user, router]);
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { isLoading } = useAuth();
 
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg">
-        <LoadingSpinner label="Starting MeterEdit..." />
+        <LoadingSpinner label={`Starting ${APP_NAME}...`} />
       </div>
     );
   }
 
-  return <>{children}</>;
+  return (
+    <ErrorBoundary>
+      {children}
+      <ToastContainer />
+    </ErrorBoundary>
+  );
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <AuthRedirect>
-          {children}
-          <ToastContainer />
-        </AuthRedirect>
-      </ToastProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <AuthGate>{children}</AuthGate>
+        </ToastProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

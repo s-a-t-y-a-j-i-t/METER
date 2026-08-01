@@ -16,20 +16,21 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<Variant, string> = {
   primary:
-    "bg-primary text-white hover:bg-primary-dark shadow-sm disabled:bg-indigo-300",
+    "bg-primary text-white hover:bg-primary-dark shadow-sm disabled:opacity-50",
   secondary:
-    "bg-slate-100 text-slate-800 hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400",
+    "bg-bg-muted text-text hover:opacity-90 disabled:opacity-50",
   danger:
-    "bg-danger text-white hover:bg-red-700 shadow-sm disabled:bg-red-300",
-  ghost: "bg-transparent text-slate-700 hover:bg-slate-100 disabled:text-slate-400",
+    "bg-danger text-white hover:opacity-90 shadow-sm disabled:opacity-50",
+  ghost:
+    "bg-transparent text-text-secondary hover:bg-bg-muted disabled:opacity-50",
   outline:
-    "bg-white border border-border text-slate-800 hover:bg-slate-50 disabled:text-slate-400",
+    "bg-surface border border-border text-text hover:bg-bg-muted disabled:opacity-50",
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: "h-9 px-3 text-sm gap-1.5",
-  md: "h-10 px-4 text-sm gap-2",
-  lg: "h-11 px-5 text-base gap-2",
+  sm: "min-h-9 h-9 px-3 text-sm gap-1.5",
+  md: "min-h-10 h-10 px-4 text-sm gap-2",
+  lg: "min-h-11 h-11 px-5 text-base gap-2",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -50,8 +51,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={cn(
-          "inline-flex items-center justify-center rounded-lg font-medium transition-colors",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+          "inline-flex items-center justify-center rounded-[var(--radius-control)] font-medium transition-colors",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
           "disabled:cursor-not-allowed",
           variantClasses[variant],
           sizeClasses[size],
@@ -59,6 +60,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           className
         )}
         disabled={disabled || loading}
+        aria-busy={loading || undefined}
         {...props}
       >
         {loading && <LoadingSpinner size="sm" />}
