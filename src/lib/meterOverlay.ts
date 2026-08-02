@@ -143,12 +143,18 @@ function drawSevenSegmentDigit(
   h: number,
   color: string,
   softness: number,
-  options?: { ghost?: boolean; ghostColor?: string; opacity?: number }
+  options?: {
+    ghost?: boolean;
+    ghostColor?: string;
+    opacity?: number;
+    thickness?: number;
+  }
 ) {
   const mask = SEGMENTS[digit];
   if (mask == null) return;
 
-  const t = Math.max(1.6, Math.min(w, h) * 0.13);
+  const thick = Math.max(0.85, Math.min(1.55, options?.thickness ?? 1));
+  const t = Math.max(1.6, Math.min(w, h) * 0.13 * thick);
   const inset = t * 0.5;
   const left = x + inset;
   const right = x + w - inset;
@@ -194,7 +200,12 @@ function drawSevenSegmentText(
   spacing: number,
   color: string,
   softness: number,
-  options?: { ghost?: boolean; ghostColor?: string; opacity?: number }
+  options?: {
+    ghost?: boolean;
+    ghostColor?: string;
+    opacity?: number;
+    thickness?: number;
+  }
 ) {
   const digitH = fontSize;
   const digitW = fontSize * 0.52;
@@ -291,6 +302,23 @@ function roundRect(
   ctx.arcTo(x, y + h, x, y, radius);
   ctx.arcTo(x, y, x + w, y, radius);
   ctx.closePath();
+}
+
+function resolveDigitLook(settings: OverlaySettings): {
+  color: string;
+  opacity: number;
+  thickness: number;
+  softness: number;
+} {
+  const darkness = Math.max(0, Math.min(100, settings.digitDarkness ?? 55)) / 100;
+  // Push ink toward near-black as darkness increases
+  const color = mixHex(settings.textColor, "#0c0e0b", darkness * 0.75);
+  const baseOpacity = settings.digitOpacity ?? 0.82;
+  const opacity = Math.min(1, baseOpacity + darkness * (1 - baseOpacity) * 0.85);
+  const thickness = 0.9 + darkness * 0.55;
+  // Slightly less blur when darker so digits stay sharp/gadha
+  const softness = Math.max(0, (settings.softness ?? 1.2) * (1 - darkness * 0.35));
+  return { color, opacity, thickness, softness };
 }
 
 function drawSoftCover(
@@ -396,13 +424,12 @@ export function drawOverlay(
     pad,
     fontSize,
     spacing,
-    softness,
     radius,
     rotation,
   } = geom;
   const skewX = ((settings.skewX ?? 0) * Math.PI) / 180;
   const scale = getOverlayScale(width);
-  const digitOpacity = settings.digitOpacity ?? 0.82;
+  const look = resolveDigitLook(settings);
   const ghost = settings.ghostSegments ?? true;
   const dust = settings.dustIntensity ?? 0.55;
 
@@ -427,7 +454,7 @@ export function drawOverlay(
         : settings.background === "black"
           ? "#111111"
           : settings.customBackground || "#c4c7bb";
-  const ghostColor = mixHex(bgHex, settings.textColor, 0.2);
+  const ghostColor = mixHex(bgHex, look.color, 0.2);
 
   const layer = document.createElement("canvas");
   const padLayer = Math.ceil(14 * scale);
@@ -456,9 +483,14 @@ export function drawOverlay(
         0,
         fontSize,
         spacing,
-        settings.textColor,
-        softness,
-        { ghost, ghostColor, opacity: digitOpacity }
+        look.color,
+        look.softness,
+        {
+          ghost,
+          ghostColor,
+          opacity: look.opacity,
+          thickness: look.thickness,
+        }
       );
     } else {
       if (settings.digitStyle === "lcd") {
@@ -478,14 +510,14 @@ export function drawOverlay(
           0,
           settings.align,
           spacing,
-          settings.textColor,
-          softness,
-          digitOpacity
+          look.color,
+          look.softness,
+          look.opacity
         );
       } else {
         lctx.save();
-        lctx.globalAlpha = digitOpacity;
-        lctx.fillStyle = settings.textColor;
+        lctx.globalAlpha = look.opacity;
+        lctx.fillStyle = look.color;
         lctx.textBaseline = "middle";
         lctx.textAlign =
           settings.align === "left"
@@ -493,9 +525,9 @@ export function drawOverlay(
             : settings.align === "right"
               ? "right"
               : "center";
-        if (softness > 0) {
-          lctx.shadowColor = settings.textColor;
-          lctx.shadowBlur = softness * 1.8;
+        if (look.softness > 0) {
+          lctx.shadowColor = look.color;
+          lctx.shadowBlur = look.softness * 1.8;
         }
         lctx.fillText(text, textX, 0);
         lctx.restore();
@@ -503,8 +535,8 @@ export function drawOverlay(
     }
 
     ctx.save();
-    if (softness > 0.25) {
-      ctx.filter = `blur(${Math.min(1.6, softness * 0.4 * scale)}px)`;
+    if (look.softness > 0.25) {
+      ctx.filter = `blur(${Math.min(1.6, look.softness * 0.4 * scale)}px)`;
     }
     ctx.drawImage(layer, boxX - padLayer, boxY - padLayer);
     ctx.filter = "none";
@@ -850,6 +882,7 @@ export function buildNaturalOverlayPatch(
     letterSpacing: base.letterSpacing ?? 3,
     softness: Math.max(base.softness ?? 1.2, 1),
     digitOpacity: isLightLcd ? 0.8 : 0.9,
+    digitDarkness: base.digitDarkness ?? 55,
     ghostSegments: true,
     dustIntensity: Math.max(base.dustIntensity ?? 0.55, 0.45),
     padding: Math.min(Math.max(base.padding ?? 6, 4), 10),
@@ -874,6 +907,7 @@ export function applyMeterLookPreset(
       borderRadius: 2,
       padding: Math.max(base.padding, 6),
       digitOpacity: 0.92,
+      digitDarkness: 70,
       ghostSegments: false,
       dustIntensity: 0.35,
     };
@@ -892,6 +926,7 @@ export function applyMeterLookPreset(
       borderRadius: 1,
       padding: 6,
       digitOpacity: 0.8,
+      digitDarkness: 60,
       ghostSegments: true,
       dustIntensity: 0.6,
     };
@@ -908,6 +943,7 @@ export function applyMeterLookPreset(
     borderRadius: 2,
     padding: Math.max(base.padding, 6),
     digitOpacity: 0.88,
+    digitDarkness: 40,
     ghostSegments: true,
     dustIntensity: 0.4,
   };

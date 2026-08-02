@@ -81,6 +81,11 @@ export interface OverlaySettings {
   skewX: number;
   /** Digits are slightly transparent like real LCD ink. */
   digitOpacity: number;
+  /**
+   * How dark/bold the reading looks (0 = faint/light, 100 = solid/dark).
+   * Useful when LCD digits look too light in the photo.
+   */
+  digitDarkness: number;
   /** Faint inactive 7-segments (real LCD ghosting). */
   ghostSegments: boolean;
   /** Dust / grain drawn ON TOP of digits (behind plastic look). */
@@ -123,6 +128,7 @@ export const DEFAULT_OVERLAY: OverlaySettings = {
   rotation: 0,
   skewX: 0,
   digitOpacity: 0.82,
+  digitDarkness: 55,
   ghostSegments: true,
   dustIntensity: 0.55,
 };

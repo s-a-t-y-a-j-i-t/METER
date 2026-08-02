@@ -272,6 +272,26 @@ export function EditorControls({
         </div>
 
         <div>
+          <label className={label} htmlFor="digit-darkness">
+            Number Darkness (Gadha): {Math.round(settings.digitDarkness ?? 55)}
+          </label>
+          <input
+            id="digit-darkness"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={settings.digitDarkness ?? 55}
+            onChange={(e) => set("digitDarkness", Number(e.target.value))}
+            className="w-full"
+            aria-label="Number darkness"
+          />
+          <p className="mt-1 text-[11px] text-muted">
+            Left = light / faint · Right = dark / gadha
+          </p>
+        </div>
+
+        <div>
           <label className={label} htmlFor="softness">
             Soft Blend: {settings.softness.toFixed(1)}
           </label>
