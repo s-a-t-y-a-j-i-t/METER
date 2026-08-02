@@ -17,11 +17,15 @@ import {
   getFirebaseUserById,
   subscribeAuth,
 } from "@/lib/firebaseAuth";
+import { verifyDeviceWithServer } from "@/lib/deviceClient";
+import { DEVICE_MISMATCH_MESSAGE } from "@/lib/device";
 
 interface AuthContextValue {
   user: AuthSession | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /** True only after Firebase Auth + device binding both succeed. */
+  deviceVerified: boolean;
   role: UserRole | null;
   login: (
     userId: string,
@@ -30,6 +34,8 @@ interface AuthContextValue {
   ) => Promise<{ ok: boolean; error?: string; session?: AuthSession }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  /** Re-run device check (used by ProtectedRoute). */
+  reverifyDevice: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -37,6 +43,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [deviceVerified, setDeviceVerified] = useState(false);
 
   useEffect(() => {
     // Keep localStorage helpers seeded for history/stats/activity
@@ -60,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsub = subscribeAuth((session) => {
         if (!cancelled) {
           setUser(session);
+          setDeviceVerified(!!session);
           setIsLoading(false);
         }
       });
@@ -76,6 +84,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await firebaseLogin(userId, password, remember);
       if (result.ok && result.session) {
         setUser(result.session);
+        setDeviceVerified(true);
+      } else {
+        setDeviceVerified(false);
       }
       return result;
     },
@@ -85,17 +96,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     await firebaseLogout({ recordActivity: true });
     setUser(null);
+    setDeviceVerified(false);
   }, []);
+
+  const reverifyDevice = useCallback(async () => {
+    if (!user) {
+      setDeviceVerified(false);
+      return { ok: false, error: "Not signed in." };
+    }
+    let result = await verifyDeviceWithServer({
+      userDocId: user.id,
+      checkOnly: true,
+    });
+
+    // After admin reset (or first bind), register this browser
+    if (!result.ok && result.code === "UNREGISTERED") {
+      result = await verifyDeviceWithServer({
+        userDocId: user.id,
+        checkOnly: false,
+      });
+    }
+
+    if (!result.ok) {
+      setDeviceVerified(false);
+      await firebaseLogout({ recordActivity: false });
+      setUser(null);
+      return {
+        ok: false,
+        error:
+          result.code === "DEVICE_MISMATCH" || result.code === "BLOCKED"
+            ? DEVICE_MISMATCH_MESSAGE
+            : result.error || DEVICE_MISMATCH_MESSAGE,
+      };
+    }
+    setDeviceVerified(true);
+    return { ok: true };
+  }, [user]);
 
   const refreshUser = useCallback(async () => {
     if (!user) {
       setUser(null);
+      setDeviceVerified(false);
       return;
     }
     const fresh = await getFirebaseUserById(user.id);
     if (!fresh || fresh.status === "inactive") {
       await firebaseLogout({ recordActivity: false });
       setUser(null);
+      setDeviceVerified(false);
       return;
     }
     setUser({
@@ -115,12 +163,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       isLoading,
       isAuthenticated: !!user?.isAuthenticated,
+      deviceVerified,
       role: user?.role ?? null,
       login,
       logout,
       refreshUser,
+      reverifyDevice,
     }),
-    [user, isLoading, login, logout, refreshUser]
+    [
+      user,
+      isLoading,
+      deviceVerified,
+      login,
+      logout,
+      refreshUser,
+      reverifyDevice,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

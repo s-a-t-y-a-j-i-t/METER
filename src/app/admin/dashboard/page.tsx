@@ -12,6 +12,7 @@ import {
   UserPlus,
   Activity,
   Settings,
+  MonitorSmartphone,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { StatCard } from "@/components/dashboard/StatCard";
@@ -170,6 +171,12 @@ export default function AdminDashboardPage() {
             <Button variant="outline" className="min-h-11 w-full sm:w-auto">
               <Users className="h-4 w-4" aria-hidden="true" />
               Manage Users
+            </Button>
+          </Link>
+          <Link href="/admin/devices">
+            <Button variant="outline" className="min-h-11 w-full sm:w-auto">
+              <MonitorSmartphone className="h-4 w-4" aria-hidden="true" />
+              Registered Devices
             </Button>
           </Link>
           <Link href="/admin/activity">

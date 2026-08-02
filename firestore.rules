@@ -1,12 +1,100 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    /** Doc id = email local-part for admin-created users (and default admin). */
+    function callerDocId() {
+      return request.auth.token.email != null
+        ? request.auth.token.email.split('@')[0]
+        : '';
+    }
+
+    function callerDocPath() {
+      return /databases/$(database)/documents/users/$(callerDocId());
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && callerDocId() != ''
+        && exists(callerDocPath())
+        && get(callerDocPath()).data.uid == request.auth.uid
+        && get(callerDocPath()).data.role == 'admin';
+    }
+
+    function isOwner() {
+      return signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    function existingDeviceId() {
+      return resource.data.keys().hasAll(['device'])
+        ? resource.data.device.get('deviceId', null)
+        : null;
+    }
+
+    function incomingDeviceId() {
+      return request.resource.data.keys().hasAll(['device'])
+        ? request.resource.data.device.get('deviceId', null)
+        : null;
+    }
+
+    function sessionVersionUnchanged() {
+      return resource.data.get('sessionVersion', 0)
+        == request.resource.data.get('sessionVersion', 0);
+    }
+
+    /** First bind: no device yet → may set deviceId + meta. */
+    function ownerFirstBind() {
+      return isOwner()
+        && (existingDeviceId() == null || existingDeviceId() == '')
+        && incomingDeviceId() is string
+        && incomingDeviceId().size() >= 16
+        && sessionVersionUnchanged();
+    }
+
+    /** Same device: may refresh lastLoginAt / browser meta only. */
+    function ownerSameDeviceRefresh() {
+      return isOwner()
+        && existingDeviceId() is string
+        && existingDeviceId() == incomingDeviceId()
+        && sessionVersionUnchanged()
+        && request.resource.data.device.firstLoginAt
+             == resource.data.device.firstLoginAt;
+    }
+
+    /** Profile/status edits that do not touch the device binding. */
+    function nonDeviceProfileEdit() {
+      return sessionVersionUnchanged()
+        && existingDeviceId() == incomingDeviceId()
+        && (
+          !resource.data.keys().hasAll(['device'])
+          || resource.data.device == request.resource.data.device
+        );
+    }
+
     match /users/{userId} {
-      // Public get allows login-by-userId to resolve email before Auth.
-      // Passwords are never stored in Firestore.
+      // Public get: login-by-userId resolves email before Auth.
       allow get: if true;
-      allow list: if request.auth != null;
-      allow create, update, delete: if request.auth != null;
+
+      allow list: if signedIn();
+
+      // Create profile without a bound device.
+      allow create: if signedIn() && (
+        !request.resource.data.keys().hasAll(['device'])
+        || request.resource.data.device.get('deviceId', null) == null
+      );
+
+      allow update: if signedIn() && (
+        isAdmin()
+        || ownerFirstBind()
+        || ownerSameDeviceRefresh()
+        || nonDeviceProfileEdit()
+      );
+
+      allow delete: if isAdmin();
     }
   }
 }

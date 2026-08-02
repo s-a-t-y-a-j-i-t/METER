@@ -1,9 +1,7 @@
 "use client";
 
 /**
- * This application uses browser-only localStorage authentication.
- * It is intended for prototype/demo/internal offline use and is NOT
- * suitable for secure production authentication.
+ * Login page — Firebase Auth + single-device verification.
  */
 
 import { useEffect } from "react";
@@ -13,25 +11,25 @@ import { LoginForm } from "@/components/auth/LoginForm";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 
 export default function LoginPage() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, deviceVerified } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (isLoading) return;
-    if (isAuthenticated) {
+    if (isAuthenticated && deviceVerified) {
       router.replace(user?.role === "admin" ? "/admin/dashboard" : "/dashboard");
     }
-  }, [isLoading, isAuthenticated, user, router]);
+  }, [isLoading, isAuthenticated, deviceVerified, user, router]);
 
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg">
-        <LoadingSpinner />
+        <LoadingSpinner label="Checking session..." />
       </div>
     );
   }
 
-  if (isAuthenticated) return null;
+  if (isAuthenticated && deviceVerified) return null;
 
   return <LoginForm />;
 }

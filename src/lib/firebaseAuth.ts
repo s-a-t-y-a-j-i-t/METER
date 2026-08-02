@@ -31,6 +31,11 @@ import {
 } from "./firebase";
 import { AppUser, AuthSession, UserRole, UserStatus } from "./types";
 import { logActivity } from "./storage";
+import {
+  clearDeviceSessionState,
+  verifyDeviceWithServer,
+} from "./deviceClient";
+import { DEVICE_MISMATCH_MESSAGE } from "./device";
 
 const USERS_COLLECTION = "users";
 const DEFAULT_ADMIN_EMAIL = "admin@meter-f4067.firebaseapp.com";
@@ -50,6 +55,17 @@ export interface UserProfile {
   role: UserRole;
   status: UserStatus;
   createdAt: string;
+  /** Single-device binding — written via Admin API or rules-gated client path. */
+  device?: {
+    deviceId: string | null;
+    firstLoginAt: string | null;
+    lastLoginAt: string | null;
+    browser: string | null;
+    operatingSystem: string | null;
+    deviceType: "Mobile" | "Desktop" | "Tablet" | null;
+    status: "active" | "unregistered" | "blocked";
+  };
+  sessionVersion?: number;
 }
 
 function mapProfile(data: UserProfile): AppUser {
@@ -339,12 +355,31 @@ export async function firebaseLogin(
       };
     }
 
+    // Single-device binding: register on first login, block other devices later
+    const deviceResult = await verifyDeviceWithServer({
+      userDocId: profile.id,
+    });
+    if (!deviceResult.ok) {
+      clearDeviceSessionState();
+      await signOut(auth).catch(() => undefined);
+      return {
+        ok: false,
+        error:
+          deviceResult.code === "DEVICE_MISMATCH" ||
+          deviceResult.code === "BLOCKED"
+            ? DEVICE_MISMATCH_MESSAGE
+            : deviceResult.error || DEVICE_MISMATCH_MESSAGE,
+      };
+    }
+
     const session = toSession(profile, remember);
     logActivity({
       userId: profile.id,
       userName: profile.name,
       action: "LOGIN",
-      description: "Logged in",
+      description: deviceResult.registered
+        ? "Logged in (device registered)"
+        : "Logged in",
     });
 
     return { ok: true, session };
@@ -376,6 +411,7 @@ export async function firebaseLogout(options?: {
       });
     }
   }
+  clearDeviceSessionState();
   await signOut(auth);
 }
 
@@ -385,16 +421,45 @@ export function subscribeAuth(
   const auth = getFirebaseAuth();
   return onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
     if (!firebaseUser) {
+      clearDeviceSessionState();
       onChange(null);
       return;
     }
     try {
       const profile = await ensureProfileForAuthUser(firebaseUser);
       if (profile.status === "inactive") {
+        clearDeviceSessionState();
         await signOut(auth);
         onChange(null);
         return;
       }
+
+      // Re-verify device on session restore (blocks dashboard until OK).
+      const deviceResult = await verifyDeviceWithServer({
+        userDocId: profile.id,
+        checkOnly: true,
+      });
+      if (!deviceResult.ok) {
+        // First session after create/reset — register this device
+        if (deviceResult.code === "UNREGISTERED") {
+          const bind = await verifyDeviceWithServer({
+            userDocId: profile.id,
+            checkOnly: false,
+          });
+          if (!bind.ok) {
+            clearDeviceSessionState();
+            await signOut(auth).catch(() => undefined);
+            onChange(null);
+            return;
+          }
+        } else {
+          clearDeviceSessionState();
+          await signOut(auth).catch(() => undefined);
+          onChange(null);
+          return;
+        }
+      }
+
       onChange(toSession(profile, true));
     } catch {
       onChange(null);

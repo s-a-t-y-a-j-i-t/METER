@@ -1,11 +1,25 @@
 /**
  * App domain types.
  * Authentication is handled by Firebase Auth; user profiles live in Firestore.
+ * Single-device bindings live under users/{id}.device (see deviceService.ts).
  * Meter history, stats, and activity logs still use browser localStorage.
  */
 
 export type UserRole = "admin" | "user";
 export type UserStatus = "active" | "inactive";
+export type DeviceType = "Mobile" | "Desktop" | "Tablet";
+export type DeviceBindingStatus = "active" | "unregistered" | "blocked";
+
+/** Device binding stored on the Firestore user document. */
+export interface DeviceBinding {
+  deviceId: string | null;
+  firstLoginAt: string | null;
+  lastLoginAt: string | null;
+  browser: string | null;
+  operatingSystem: string | null;
+  deviceType: DeviceType | null;
+  status: DeviceBindingStatus;
+}
 
 export interface AppUser {
   id: string;
