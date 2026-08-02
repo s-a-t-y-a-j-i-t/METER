@@ -720,30 +720,11 @@ export function canvasToLocal(
   const rad = (-rotationDeg * Math.PI) / 180;
   const dx = x - centerX;
   const dy = y - centerY;
-  let lx = dx * Math.cos(rad) - dy * Math.sin(rad);
-  let ly = dx * Math.sin(rad) + dy * Math.cos(rad);
-  // Inverse shear
+  const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
   const shear = Math.tan((skewXDeg * Math.PI) / 180);
-  lx = lx - ly * shear;
+  // Inverse shear after un-rotation
+  const lx = dx * Math.cos(rad) - dy * Math.sin(rad) - ly * shear;
   return { x: lx, y: ly };
-}
-
-function averagePixels(
-  data: Uint8ClampedArray,
-  indices: number[]
-): { r: number; g: number; b: number } {
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  let n = 0;
-  for (const i of indices) {
-    r += data[i];
-    g += data[i + 1];
-    b += data[i + 2];
-    n += 1;
-  }
-  if (!n) return { r: 196, g: 199, b: 187 };
-  return { r: r / n, g: g / n, b: b / n };
 }
 
 /**
