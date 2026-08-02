@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
-import { OverlaySettings } from "@/lib/types";
+import { ChevronDown, Sparkles } from "lucide-react";
+import { OverlaySettings, OverlayDigitStyle } from "@/lib/types";
 import { Button } from "@/components/common/Button";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +15,7 @@ interface ReadingEditorProps {
   onReadingChange: (value: string) => void;
   onApply: () => void;
   applied: boolean;
+  applying?: boolean;
 }
 
 export function ReadingEditor({
@@ -26,6 +27,7 @@ export function ReadingEditor({
   onReadingChange,
   onApply,
   applied,
+  applying,
 }: ReadingEditorProps) {
   return (
     <section className="space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-card)] sm:p-5">
@@ -77,12 +79,17 @@ export function ReadingEditor({
       <Button
         type="button"
         onClick={onApply}
-        disabled={!reading.trim()}
+        disabled={!reading.trim() || applying}
+        loading={applying}
         fullWidth
         aria-label={applied ? "Update reading overlay" : "Apply reading to image"}
         className="min-h-11"
       >
-        {applied ? "Update Reading" : "Apply Reading"}
+        {applying
+          ? "Matching screen..."
+          : applied
+            ? "Update Reading"
+            : "Apply Reading"}
       </Button>
     </section>
   );
@@ -93,6 +100,9 @@ interface EditorControlsProps {
   onChange: (next: OverlaySettings) => void;
   onResetPosition: () => void;
   onResetEditor: () => void;
+  onMatchScreen?: () => void;
+  matchingScreen?: boolean;
+  onApplyLook?: (look: "lcd-dark" | "led-red" | "lcd-green") => void;
 }
 
 function CollapsibleSection({
@@ -128,6 +138,9 @@ export function EditorControls({
   onChange,
   onResetPosition,
   onResetEditor,
+  onMatchScreen,
+  matchingScreen,
+  onApplyLook,
 }: EditorControlsProps) {
   const set = <K extends keyof OverlaySettings>(
     key: K,
@@ -142,6 +155,57 @@ export function EditorControls({
   return (
     <div className="space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-card)] sm:p-5">
       <h3 className="text-card-title">Overlay Controls</h3>
+      <p className="text-caption">
+        Drag on the image to move, use corner handles to resize, and the top
+        handle to rotate. Match Screen picks colors from the meter photo.
+      </p>
+
+      {onMatchScreen && (
+        <Button
+          type="button"
+          onClick={onMatchScreen}
+          loading={matchingScreen}
+          disabled={matchingScreen}
+          fullWidth
+          className="min-h-11"
+          aria-label="Match overlay colors to meter screen"
+        >
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+          Match Screen Colors
+        </Button>
+      )}
+
+      {onApplyLook && (
+        <div className="grid grid-cols-3 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-10"
+            onClick={() => onApplyLook("lcd-green")}
+          >
+            Real LCD
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-10"
+            onClick={() => onApplyLook("led-red")}
+          >
+            Red LED
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-10"
+            onClick={() => onApplyLook("lcd-dark")}
+          >
+            Dark LCD
+          </Button>
+        </div>
+      )}
 
       <CollapsibleSection title="Appearance" defaultOpen>
         <div>
@@ -155,6 +219,24 @@ export function EditorControls({
             onChange={(e) => set("text", e.target.value)}
             aria-label="Overlay reading text"
           />
+        </div>
+
+        <div>
+          <label className={label} htmlFor="digit-style">
+            Digit Style
+          </label>
+          <select
+            id="digit-style"
+            className={field}
+            value={settings.digitStyle}
+            onChange={(e) =>
+              set("digitStyle", e.target.value as OverlayDigitStyle)
+            }
+          >
+            <option value="seven-segment">7-Segment (meter look)</option>
+            <option value="lcd">LCD Mono</option>
+            <option value="mono">Plain Mono</option>
+          </select>
         </div>
 
         <div>
@@ -172,6 +254,83 @@ export function EditorControls({
             aria-label="Font size"
           />
         </div>
+
+        <div>
+          <label className={label} htmlFor="letter-spacing">
+            Digit Spacing: {settings.letterSpacing}px
+          </label>
+          <input
+            id="letter-spacing"
+            type="range"
+            min={0}
+            max={16}
+            value={settings.letterSpacing}
+            onChange={(e) => set("letterSpacing", Number(e.target.value))}
+            className="w-full"
+            aria-label="Digit spacing"
+          />
+        </div>
+
+        <div>
+          <label className={label} htmlFor="softness">
+            Soft Blend: {settings.softness.toFixed(1)}
+          </label>
+          <input
+            id="softness"
+            type="range"
+            min={0}
+            max={4}
+            step={0.1}
+            value={settings.softness}
+            onChange={(e) => set("softness", Number(e.target.value))}
+            className="w-full"
+            aria-label="Soft blend"
+          />
+        </div>
+
+        <div>
+          <label className={label} htmlFor="dust">
+            Dust / Glare: {Math.round((settings.dustIntensity ?? 0) * 100)}%
+          </label>
+          <input
+            id="dust"
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={settings.dustIntensity ?? 0}
+            onChange={(e) => set("dustIntensity", Number(e.target.value))}
+            className="w-full"
+            aria-label="Dust intensity"
+          />
+        </div>
+
+        <div>
+          <label className={label} htmlFor="digit-opacity">
+            Digit Strength: {Math.round((settings.digitOpacity ?? 0.8) * 100)}%
+          </label>
+          <input
+            id="digit-opacity"
+            type="range"
+            min={0.4}
+            max={1}
+            step={0.02}
+            value={settings.digitOpacity ?? 0.8}
+            onChange={(e) => set("digitOpacity", Number(e.target.value))}
+            className="w-full"
+            aria-label="Digit opacity"
+          />
+        </div>
+
+        <label className="flex min-h-11 items-center gap-2 text-sm text-text">
+          <input
+            type="checkbox"
+            checked={settings.ghostSegments ?? true}
+            onChange={(e) => set("ghostSegments", e.target.checked)}
+            className="h-4 w-4"
+          />
+          Ghost LCD segments (real meter look)
+        </label>
 
         <div>
           <label className={label} htmlFor="font-weight">
@@ -306,7 +465,7 @@ export function EditorControls({
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Position" defaultOpen={false}>
+      <CollapsibleSection title="Position & Transform" defaultOpen>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={label} htmlFor="pos-x">
@@ -348,6 +507,38 @@ export function EditorControls({
               }}
             />
           </div>
+        </div>
+        <div>
+          <label className={label} htmlFor="rotation">
+            Rotation: {(settings.rotation ?? 0).toFixed(1)}°
+          </label>
+          <input
+            id="rotation"
+            type="range"
+            min={-60}
+            max={60}
+            step={0.5}
+            value={settings.rotation ?? 0}
+            onChange={(e) => set("rotation", Number(e.target.value))}
+            className="w-full"
+            aria-label="Rotation"
+          />
+        </div>
+        <div>
+          <label className={label} htmlFor="skew">
+            Perspective skew: {(settings.skewX ?? 0).toFixed(1)}°
+          </label>
+          <input
+            id="skew"
+            type="range"
+            min={-25}
+            max={25}
+            step={0.5}
+            value={settings.skewX ?? 0}
+            onChange={(e) => set("skewX", Number(e.target.value))}
+            className="w-full"
+            aria-label="Perspective skew"
+          />
         </div>
       </CollapsibleSection>
 

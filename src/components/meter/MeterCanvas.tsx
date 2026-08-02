@@ -9,13 +9,13 @@ import {
 } from "react";
 import { Maximize2, Minus, Plus, RotateCcw } from "lucide-react";
 import { OverlaySettings, ImageAdjustments, DEFAULT_IMAGE_ADJUSTMENTS } from "@/lib/types";
+import { clampOverlayPercent, drawAdjustedImage, cn } from "@/lib/utils";
 import {
-  getOverlayBackgroundColor,
-  clampOverlayPercent,
-  getOverlayScale,
-  drawAdjustedImage,
-  cn,
-} from "@/lib/utils";
+  drawOverlay,
+  getOverlayGeometry,
+  hitTestOverlay,
+  OverlayHitTarget,
+} from "@/lib/meterOverlay";
 import { Button } from "@/components/common/Button";
 
 /** Cap editor preview bitmap size; exports still use full natural resolution. */
@@ -40,7 +40,18 @@ interface MeterCanvasProps {
   showOverlay: boolean;
   onSettingsChange: (settings: OverlaySettings) => void;
   onImageError?: () => void;
+  /** Fired after move / resize / rotate finishes — useful for rematching colors. */
+  onTransformEnd?: (settings: OverlaySettings) => void;
 }
+
+type DragState = {
+  mode: OverlayHitTarget;
+  startX: number;
+  startY: number;
+  startSettings: OverlaySettings;
+  startDist: number;
+  startAngle: number;
+};
 
 export function MeterCanvas({
   imageUrl,
@@ -49,16 +60,23 @@ export function MeterCanvas({
   showOverlay,
   onSettingsChange,
   onImageError,
+  onTransformEnd,
 }: MeterCanvasProps) {
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  const dragRef = useRef(false);
+  const settingsRef = useRef(settings);
+  const dragRef = useRef<DragState | null>(null);
   const [zoom, setZoom] = useState(1);
   const [dragging, setDragging] = useState(false);
+  const [hoverMode, setHoverMode] = useState<OverlayHitTarget>(null);
   const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   const draw = useCallback(() => {
     const canvas = displayCanvasRef.current;
@@ -68,7 +86,6 @@ export function MeterCanvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Scaled preview for performance; PNG/JPG export uses full natural size
     const display = getDisplaySize(img.naturalWidth, img.naturalHeight);
     canvas.width = display.w;
     canvas.height = display.h;
@@ -77,7 +94,9 @@ export function MeterCanvas({
     drawAdjustedImage(ctx, img, canvas.width, canvas.height, adjustments);
 
     if (showOverlay && settings.text.trim()) {
-      drawOverlay(ctx, canvas.width, canvas.height, settings);
+      drawOverlay(ctx, canvas.width, canvas.height, settings, {
+        showHandles: true,
+      });
     }
   }, [settings, showOverlay, adjustments]);
 
@@ -107,78 +126,163 @@ export function MeterCanvas({
     if (ready) draw();
   }, [ready, draw]);
 
-  const measureBox = useCallback(
-    (text: string) => {
-      const display = getDisplaySize(naturalSize.w || 800, naturalSize.h || 600);
-      const w = displayCanvasRef.current?.width || display.w;
-      const scale = getOverlayScale(w);
-      const fontSize = settings.fontSize * scale;
-      const pad = settings.padding * scale;
-      const canvas = displayCanvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.font = `${settings.fontWeight} ${fontSize}px monospace, ui-monospace, system-ui`;
-          const textWidth = ctx.measureText(text || "0").width;
-          return { boxW: textWidth + pad * 2, boxH: fontSize + pad * 2 };
-        }
-      }
-      const approxChar = fontSize * 0.62;
-      return {
-        boxW: Math.max(fontSize, (text || "0").length * approxChar) + pad * 2,
-        boxH: fontSize + pad * 2,
-      };
-    },
-    [naturalSize.w, naturalSize.h, settings.fontSize, settings.fontWeight, settings.padding]
-  );
-
-  const getClampedPos = useCallback(
-    (rawX: number, rawY: number) => {
-      const { boxW, boxH } = measureBox(settings.text || "0");
-      const display = getDisplaySize(naturalSize.w || 1, naturalSize.h || 1);
-      const w = displayCanvasRef.current?.width || display.w;
-      const h = displayCanvasRef.current?.height || display.h;
-      return clampOverlayPercent(rawX, rawY, boxW, boxH, w, h);
-    },
-    [measureBox, settings.text, naturalSize.w, naturalSize.h]
-  );
-
-  const getPercentFromPointer = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+  const pointerToCanvas = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = displayCanvasRef.current;
-    if (!canvas) return { x: settings.x, y: settings.y };
+    if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) {
-      return { x: settings.x, y: settings.y };
-    }
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    return getClampedPos(x, y);
+    if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((e.clientY - rect.top) / rect.height) * canvas.height,
+    };
+  };
+
+  const clampPos = useCallback(
+    (rawX: number, rawY: number, next: OverlaySettings) => {
+      const canvas = displayCanvasRef.current;
+      if (!canvas) return { x: rawX, y: rawY };
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return { x: rawX, y: rawY };
+      const geom = getOverlayGeometry(ctx, next, canvas.width, canvas.height);
+      return clampOverlayPercent(
+        rawX,
+        rawY,
+        geom.aabbW,
+        geom.aabbH,
+        canvas.width,
+        canvas.height
+      );
+    },
+    []
+  );
+
+  const cursorForMode = (mode: OverlayHitTarget) => {
+    if (mode === "resize") return "nwse-resize";
+    if (mode === "rotate") return "grab";
+    if (mode === "move") return dragging ? "grabbing" : "move";
+    return showOverlay ? "default" : "default";
   };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     if (!showOverlay || !settings.text.trim()) return;
+    const canvas = displayCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const pt = pointerToCanvas(e);
+    const mode = hitTestOverlay(
+      ctx,
+      settings,
+      canvas.width,
+      canvas.height,
+      pt.x,
+      pt.y
+    );
+    if (!mode) return;
+
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    dragRef.current = true;
+
+    const geom = getOverlayGeometry(ctx, settings, canvas.width, canvas.height);
+    const dx = pt.x - geom.centerX;
+    const dy = pt.y - geom.centerY;
+
+    dragRef.current = {
+      mode,
+      startX: pt.x,
+      startY: pt.y,
+      startSettings: { ...settings },
+      startDist: Math.max(8, Math.hypot(dx, dy)),
+      startAngle: (Math.atan2(dy, dx) * 180) / Math.PI,
+    };
     setDragging(true);
-    const pos = getPercentFromPointer(e);
-    onSettingsChange({ ...settings, ...pos });
+    setHoverMode(mode);
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!dragRef.current) return;
+    const canvas = displayCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const pt = pointerToCanvas(e);
+
+    if (!dragRef.current) {
+      if (showOverlay && settings.text.trim()) {
+        const mode = hitTestOverlay(
+          ctx,
+          settings,
+          canvas.width,
+          canvas.height,
+          pt.x,
+          pt.y
+        );
+        setHoverMode(mode);
+      }
+      return;
+    }
+
     e.preventDefault();
-    const pos = getPercentFromPointer(e);
-    onSettingsChange({ ...settings, ...pos });
+    const drag = dragRef.current;
+    const start = drag.startSettings;
+
+    if (drag.mode === "move") {
+      const dxPct = ((pt.x - drag.startX) / canvas.width) * 100;
+      const dyPct = ((pt.y - drag.startY) / canvas.height) * 100;
+      const next = {
+        ...start,
+        x: start.x + dxPct,
+        y: start.y + dyPct,
+      };
+      const pos = clampPos(next.x, next.y, next);
+      onSettingsChange({ ...next, ...pos });
+      return;
+    }
+
+    if (drag.mode === "resize") {
+      const geom = getOverlayGeometry(ctx, start, canvas.width, canvas.height);
+      const dist = Math.max(8, Math.hypot(pt.x - geom.centerX, pt.y - geom.centerY));
+      const scaleFactor = dist / drag.startDist;
+      const nextSize = Math.round(
+        Math.max(12, Math.min(140, start.fontSize * scaleFactor))
+      );
+      const nextPad = Math.round(
+        Math.max(0, Math.min(40, start.padding * Math.sqrt(scaleFactor)))
+      );
+      onSettingsChange({
+        ...start,
+        fontSize: nextSize,
+        padding: nextPad,
+      });
+      return;
+    }
+
+    if (drag.mode === "rotate") {
+      const geom = getOverlayGeometry(ctx, start, canvas.width, canvas.height);
+      const angle = (Math.atan2(pt.y - geom.centerY, pt.x - geom.centerX) * 180) / Math.PI;
+      let delta = angle - drag.startAngle;
+      // Normalize to avoid jumps
+      if (delta > 180) delta -= 360;
+      if (delta < -180) delta += 360;
+      const rotation = Math.max(
+        -60,
+        Math.min(60, Math.round((start.rotation + delta) * 10) / 10)
+      );
+      onSettingsChange({ ...start, rotation });
+    }
   };
 
   const onPointerUp = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    dragRef.current = false;
+    const hadDrag = !!dragRef.current;
+    dragRef.current = null;
     setDragging(false);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
       /* ignore */
+    }
+    if (hadDrag) {
+      onTransformEnd?.(settingsRef.current);
     }
   };
 
@@ -301,113 +405,41 @@ export function MeterCanvas({
             ref={displayCanvasRef}
             className={cn(
               "max-w-full rounded-lg bg-surface shadow-sm",
-              !ready && "hidden",
-              dragging
-                ? "cursor-grabbing"
-                : showOverlay
-                  ? "cursor-grab"
-                  : "cursor-default"
+              !ready && "hidden"
             )}
             style={{
               width: "100%",
               height: "auto",
               touchAction: "none",
+              cursor: cursorForMode(hoverMode),
             }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
-            aria-label="Meter image canvas editor"
+            aria-label="Meter image canvas editor — drag to move, corners to resize, top handle to rotate"
             role="img"
           />
         </div>
       </div>
       {showOverlay && (
         <p className="text-xs text-muted">
-          Drag the reading on the image to reposition it. Zoom affects the view
-          only — downloads keep original resolution.
+          <span className="font-medium text-text-secondary">Move:</span> drag
+          the box ·{" "}
+          <span className="font-medium text-text-secondary">Resize:</span>{" "}
+          corner handles ·{" "}
+          <span className="font-medium text-text-secondary">Rotate:</span> top
+          circle. Cover the original digits for a seamless look.
         </p>
       )}
     </div>
   );
 }
 
-/** Draw overlay scaled so UI sizes match visual preview at any native resolution. */
-export function drawOverlay(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  settings: OverlaySettings
-) {
-  const text = settings.text;
-  const scale = getOverlayScale(width);
-  const fontSize = settings.fontSize * scale;
-  const pad = settings.padding * scale;
-  const radius = settings.borderRadius * scale;
-
-  ctx.font = `${settings.fontWeight} ${fontSize}px monospace, ui-monospace, system-ui`;
-  ctx.textBaseline = "middle";
-
-  const metrics = ctx.measureText(text);
-  const boxW = metrics.width + pad * 2;
-  const boxH = fontSize + pad * 2;
-
-  const clamped = clampOverlayPercent(
-    settings.x,
-    settings.y,
-    boxW,
-    boxH,
-    width,
-    height
-  );
-
-  const centerX = (clamped.x / 100) * width;
-  const centerY = (clamped.y / 100) * height;
-  const boxX = centerX - boxW / 2;
-  const boxY = centerY - boxH / 2;
-
-  const bg = getOverlayBackgroundColor(settings);
-  if (bg !== "transparent") {
-    ctx.fillStyle = bg;
-    roundRect(ctx, boxX, boxY, boxW, boxH, radius);
-    ctx.fill();
-  }
-
-  ctx.fillStyle = settings.textColor;
-  let textX = centerX;
-  if (settings.align === "left") {
-    ctx.textAlign = "left";
-    textX = boxX + pad;
-  } else if (settings.align === "right") {
-    ctx.textAlign = "right";
-    textX = boxX + boxW - pad;
-  } else {
-    ctx.textAlign = "center";
-  }
-  ctx.fillText(text, textX, centerY);
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
-  ctx.closePath();
-}
+export { drawOverlay } from "@/lib/meterOverlay";
 
 /**
- * Export canvas at original image resolution.
- * Overlay % positions + scaled sizes match the preview.
+ * Export canvas at original image resolution (no editor handles).
  */
 export function renderFinalCanvas(
   imageUrl: string,

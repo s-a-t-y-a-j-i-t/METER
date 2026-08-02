@@ -54,6 +54,8 @@ export interface AppSettings {
   ocrLanguage: string;
 }
 
+export type OverlayDigitStyle = "seven-segment" | "lcd" | "mono";
+
 export interface OverlaySettings {
   text: string;
   fontSize: number;
@@ -67,6 +69,22 @@ export interface OverlaySettings {
   x: number;
   y: number;
   align: "left" | "center" | "right";
+  /** How digits are drawn — seven-segment looks closest to real meters. */
+  digitStyle: OverlayDigitStyle;
+  /** Extra space between characters (px at reference width). */
+  letterSpacing: number;
+  /** Soft blur so digits sit behind dusty plastic (0–4). */
+  softness: number;
+  /** Rotation in degrees (−60 … 60 for meter tilt). */
+  rotation: number;
+  /** Horizontal shear for perspective (approx degrees). */
+  skewX: number;
+  /** Digits are slightly transparent like real LCD ink. */
+  digitOpacity: number;
+  /** Faint inactive 7-segments (real LCD ghosting). */
+  ghostSegments: boolean;
+  /** Dust / grain drawn ON TOP of digits (behind plastic look). */
+  dustIntensity: number;
 }
 
 /** Image look adjustments applied during meter editing (and exports). */
@@ -87,17 +105,26 @@ export const DEFAULT_IMAGE_ADJUSTMENTS: ImageAdjustments = {
 
 export const DEFAULT_OVERLAY: OverlaySettings = {
   text: "",
-  fontSize: 32,
+  fontSize: 34,
   fontWeight: "bold",
-  textColor: "#ffffff",
-  background: "black",
-  customBackground: "#000000",
-  opacity: 0.75,
-  borderRadius: 6,
-  padding: 8,
+  // Real Genus/static kWh meters: dark charcoal digits on pale LCD
+  textColor: "#3a4038",
+  background: "custom",
+  customBackground: "#c4c7bb",
+  opacity: 1,
+  borderRadius: 1,
+  padding: 6,
   x: 50,
   y: 50,
   align: "center",
+  digitStyle: "seven-segment",
+  letterSpacing: 3,
+  softness: 1.2,
+  rotation: 0,
+  skewX: 0,
+  digitOpacity: 0.82,
+  ghostSegments: true,
+  dustIntensity: 0.55,
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {

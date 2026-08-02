@@ -17,6 +17,11 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { addHistoryItem, updateUserStats, logActivity } from "@/lib/storage";
 import { generateId, validateMeterReading } from "@/lib/utils";
+import {
+  sampleMeterScreenColors,
+  buildNaturalOverlayPatch,
+  applyMeterLookPreset,
+} from "@/lib/meterOverlay";
 
 export function MeterEditorWorkspace() {
   const { user } = useAuth();
@@ -38,6 +43,7 @@ export function MeterEditorWorkspace() {
   const [adjustments, setAdjustments] = useState<ImageAdjustments>({
     ...DEFAULT_IMAGE_ADJUSTMENTS,
   });
+  const [matchingScreen, setMatchingScreen] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
   const historySavedRef = useRef(false);
   const userEditedReadingRef = useRef(false);
@@ -127,7 +133,24 @@ export function MeterEditorWorkspace() {
     if (readingError) setReadingError("");
   };
 
-  const handleApply = () => {
+  const matchScreenColors = useCallback(
+    async (base: OverlaySettings) => {
+      if (!imageUrl) return base;
+      try {
+        const colors = await sampleMeterScreenColors(
+          imageUrl,
+          base,
+          adjustments
+        );
+        return buildNaturalOverlayPatch(base, colors);
+      } catch {
+        return applyMeterLookPreset(base, "lcd-dark");
+      }
+    },
+    [imageUrl, adjustments]
+  );
+
+  const handleApply = async () => {
     const result = validateMeterReading(reading);
     if (!result.ok) {
       setReadingError(result.error || "Invalid reading.");
@@ -136,9 +159,35 @@ export function MeterEditorWorkspace() {
     }
     setReadingError("");
     const trimmed = reading.trim();
-    setSettings((prev) => ({ ...prev, text: trimmed }));
-    setApplied(true);
-    toast("Reading applied to the image.", "success");
+    setMatchingScreen(true);
+    try {
+      const next = await matchScreenColors({
+        ...settings,
+        text: trimmed,
+      });
+      setSettings(next);
+      setApplied(true);
+      toast(
+        "Reading applied. Drag it over the meter digits for a seamless look.",
+        "success"
+      );
+    } finally {
+      setMatchingScreen(false);
+    }
+  };
+
+  const handleMatchScreen = async () => {
+    if (!imageUrl || !settings.text.trim()) return;
+    setMatchingScreen(true);
+    try {
+      const next = await matchScreenColors(settings);
+      setSettings(next);
+      toast("Screen colors matched to the meter photo.", "success");
+    } catch {
+      toast("Could not sample screen colors. Try a look preset.", "warning");
+    } finally {
+      setMatchingScreen(false);
+    }
   };
 
   const handleReset = () => {
@@ -218,6 +267,12 @@ export function MeterEditorWorkspace() {
             showOverlay={applied}
             onSettingsChange={setSettings}
             onImageError={handleImageError}
+            onTransformEnd={(next) => {
+              void (async () => {
+                const matched = await matchScreenColors(next);
+                setSettings(matched);
+              })();
+            }}
           />
         </section>
 
@@ -242,8 +297,9 @@ export function MeterEditorWorkspace() {
             ocrSucceeded={ocrSucceeded}
             error={readingError}
             onReadingChange={handleReadingChange}
-            onApply={handleApply}
+            onApply={() => void handleApply()}
             applied={applied}
+            applying={matchingScreen}
           />
 
           {applied && (
@@ -257,14 +313,25 @@ export function MeterEditorWorkspace() {
                 }
               }}
               onResetPosition={() =>
-                setSettings((s) => ({ ...s, x: 50, y: 50 }))
+                setSettings((s) => ({ ...s, x: 50, y: 50, rotation: 0, skewX: 0 }))
               }
               onResetEditor={() => {
                 setSettings({
                   ...DEFAULT_OVERLAY,
                   text: reading.trim() || settings.text,
                 });
-                toast("Editor controls reset.", "info");
+                toast("Editor controls reset to real LCD look.", "info");
+              }}
+              onMatchScreen={() => void handleMatchScreen()}
+              matchingScreen={matchingScreen}
+              onApplyLook={(look) => {
+                setSettings((s) => applyMeterLookPreset(s, look));
+                toast(
+                  look === "lcd-green"
+                    ? "Real meter LCD look applied."
+                    : "Meter look preset applied.",
+                  "info"
+                );
               }}
             />
           )}
