@@ -292,12 +292,7 @@ export function MeterEditorWorkspace() {
         </div>
 
         <aside className="order-3 min-w-0 space-y-4 lg:order-2 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-2">
-          <h2 className="text-card-title">Controls</h2>
-
-          <ImageAdjustControls
-            adjustments={adjustments}
-            onChange={setAdjustments}
-          />
+          <h2 className="text-card-title">Reading</h2>
 
           <OCRProcessor
             imageUrl={imageUrl}
@@ -323,6 +318,13 @@ export function MeterEditorWorkspace() {
                 opacity: on ? s.opacity : 1,
               }))
             }
+          />
+
+          <h2 className="text-card-title pt-1">Controls</h2>
+
+          <ImageAdjustControls
+            adjustments={adjustments}
+            onChange={setAdjustments}
           />
 
           {applied && (
