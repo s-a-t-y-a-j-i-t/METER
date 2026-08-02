@@ -6,7 +6,11 @@ import { Button } from "@/components/common/Button";
 import { Card, CardHeader } from "@/components/common/Card";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { getUserById, updateUser } from "@/lib/storage";
+import {
+  changeOwnPassword,
+  getFirebaseUserById,
+  updateFirebaseUser,
+} from "@/lib/firebaseAuth";
 import { formatDisplayDate } from "@/lib/utils";
 
 export default function ProfilePage() {
@@ -22,14 +26,21 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!user) return;
-    const full = getUserById(user.id);
-    setName(full?.name || user.name);
-    setEmail(full?.email || user.email || "");
-    setCreatedAt(full?.createdAt || user.createdAt);
-    setStatus(full?.status || user.status);
+    let cancelled = false;
+    (async () => {
+      const full = await getFirebaseUserById(user.id);
+      if (cancelled) return;
+      setName(full?.name || user.name);
+      setEmail(full?.email || user.email || "");
+      setCreatedAt(full?.createdAt || user.createdAt);
+      setStatus(full?.status || user.status);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user) return;
     if (!name.trim()) {
@@ -44,29 +55,37 @@ export default function ProfilePage() {
       toast("Passwords do not match.", "error");
       return;
     }
-    if (password && password.length < 4) {
-      toast("Password must be at least 4 characters.", "error");
+    if (password && password.length < 6) {
+      toast("Password must be at least 6 characters.", "error");
       return;
     }
 
     setLoading(true);
-    const updates: { name: string; email: string; password?: string } = {
+    const result = await updateFirebaseUser(user.id, {
       name: name.trim(),
       email: email.trim(),
-    };
-    if (password) updates.password = password;
-
-    const result = updateUser(user.id, updates);
-    setLoading(false);
+    });
 
     if (!result.ok) {
+      setLoading(false);
       toast(result.error || "Unable to update profile.", "error");
       return;
     }
 
+    if (password) {
+      const pw = await changeOwnPassword(password);
+      if (!pw.ok) {
+        setLoading(false);
+        toast(pw.error || "Profile saved, but password was not changed.", "error");
+        await refreshUser();
+        return;
+      }
+    }
+
+    setLoading(false);
     setPassword("");
     setConfirm("");
-    refreshUser();
+    await refreshUser();
     toast("Profile updated successfully.", "success");
   };
 
@@ -95,9 +114,9 @@ export default function ProfilePage() {
         <Card>
           <CardHeader
             title="Update Profile"
-            description="Passwords are never shown. Leave blank to keep your current password."
+            description="Passwords are managed by Firebase Auth. Leave blank to keep your current password."
           />
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
             <div>
               <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-text-secondary">
                 Full Name
@@ -120,7 +139,7 @@ export default function ProfilePage() {
                 className="field-input"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="optional"
+                placeholder="required for login"
               />
             </div>
             <div>

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { UserRole } from "@/lib/types";
-import { getUserById } from "@/lib/storage";
+import { getFirebaseUserById } from "@/lib/firebaseAuth";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -18,35 +18,63 @@ export function ProtectedRoute({
 }: ProtectedRouteProps) {
   const { user, isLoading, isAuthenticated, refreshUser } = useAuth();
   const router = useRouter();
+  const [roleOk, setRoleOk] = useState(false);
+  const [checking, setChecking] = useState(true);
 
-  // Stabilize role list identity for effect deps
   const rolesKey = useMemo(
     () => (allowedRoles ? allowedRoles.join(",") : ""),
     [allowedRoles]
   );
 
   useEffect(() => {
-    if (isLoading) return;
+    let cancelled = false;
 
-    if (!isAuthenticated || !user) {
-      router.replace("/login");
-      return;
+    async function verify() {
+      if (isLoading) return;
+
+      if (!isAuthenticated || !user) {
+        router.replace("/login");
+        if (!cancelled) {
+          setRoleOk(false);
+          setChecking(false);
+        }
+        return;
+      }
+
+      const fresh = await getFirebaseUserById(user.id);
+      if (cancelled) return;
+
+      if (!fresh || fresh.status === "inactive") {
+        await refreshUser();
+        router.replace("/login");
+        setRoleOk(false);
+        setChecking(false);
+        return;
+      }
+
+      if (fresh.role !== user.role) {
+        await refreshUser();
+      }
+
+      if (allowedRoles && !allowedRoles.includes(fresh.role)) {
+        router.replace(
+          fresh.role === "admin" ? "/admin/dashboard" : "/dashboard"
+        );
+        setRoleOk(false);
+        setChecking(false);
+        return;
+      }
+
+      setRoleOk(true);
+      setChecking(false);
     }
 
-    // Live storage check — UI state alone is not enough
-    const fresh = getUserById(user.id);
-    if (!fresh || fresh.status === "inactive") {
-      refreshUser();
-      router.replace("/login");
-      return;
-    }
-    if (fresh.role !== user.role) {
-      refreshUser();
-    }
+    setChecking(true);
+    void verify();
 
-    if (allowedRoles && !allowedRoles.includes(fresh.role)) {
-      router.replace(fresh.role === "admin" ? "/admin/dashboard" : "/dashboard");
-    }
+    return () => {
+      cancelled = true;
+    };
   }, [
     isLoading,
     isAuthenticated,
@@ -57,7 +85,7 @@ export function ProtectedRoute({
     refreshUser,
   ]);
 
-  if (isLoading) {
+  if (isLoading || checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg">
         <LoadingSpinner label="Loading..." />
@@ -65,11 +93,7 @@ export function ProtectedRoute({
     );
   }
 
-  if (!isAuthenticated || !user) return null;
-
-  const fresh = getUserById(user.id);
-  if (!fresh || fresh.status === "inactive") return null;
-  if (allowedRoles && !allowedRoles.includes(fresh.role)) return null;
+  if (!isAuthenticated || !user || !roleOk) return null;
 
   return <>{children}</>;
 }

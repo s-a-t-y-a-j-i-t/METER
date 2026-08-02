@@ -5,7 +5,8 @@ import { Activity, Search } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Pagination } from "@/components/common/Pagination";
-import { getActivityLogs, getUsers } from "@/lib/storage";
+import { getActivityLogs } from "@/lib/storage";
+import { getFirebaseUsers } from "@/lib/firebaseAuth";
 import {
   ActivityAction,
   ActivityLog,
@@ -41,9 +42,11 @@ export default function AdminActivityPage() {
 
   useEffect(() => {
     setItems(getActivityLogs());
-    setUserOptions(
-      getUsers().map((u) => ({ id: u.id, name: u.name }))
-    );
+    void getFirebaseUsers()
+      .then((users) =>
+        setUserOptions(users.map((u) => ({ id: u.id, name: u.name })))
+      )
+      .catch(() => setUserOptions([]));
   }, []);
 
   const filtered = useMemo(() => {

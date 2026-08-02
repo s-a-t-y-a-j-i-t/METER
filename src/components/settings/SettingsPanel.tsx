@@ -45,7 +45,7 @@ export function SettingsPanel({ variant = "user" }: { variant?: "user" | "admin"
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [summary, setSummary] = useState({ users: 0, activity: 0, history: 0 });
+  const [summary, setSummary] = useState({ activity: 0, history: 0 });
   const [clearActivityOpen, setClearActivityOpen] = useState(false);
   const [clearHistoryOpen, setClearHistoryOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -126,10 +126,9 @@ export function SettingsPanel({ variant = "user" }: { variant?: "user" | "admin"
       <Card>
         <CardHeader
           title="Local Data"
-          description="All data stays in this browser. No cloud sync."
+          description="Meter history and activity stay in this browser. Users are managed in Firebase."
         />
         <dl className="mb-5 space-y-3 text-sm">
-          <Row label="Users stored locally" value={String(summary.users)} />
           <Row label="Activity records" value={String(summary.activity)} />
           <Row label="Meter history" value={String(summary.history)} />
         </dl>
@@ -153,7 +152,7 @@ export function SettingsPanel({ variant = "user" }: { variant?: "user" | "admin"
             className="min-h-11"
             onClick={() => setResetOpen(true)}
           >
-            Reset Application Data
+            Reset Local Data
           </Button>
         </div>
       </Card>
@@ -164,15 +163,11 @@ export function SettingsPanel({ variant = "user" }: { variant?: "user" | "admin"
           <Row label="Application" value={APP_NAME} />
           <Row label="Product" value={APP_TAGLINE} />
           <Row label="Version" value={APP_VERSION} />
-          <Row label="Mode" value="Frontend-only application" />
+          <Row label="Auth" value="Firebase Authentication" />
           {variant === "admin" && (
             <Row label="Access" value="Administrator" />
           )}
         </dl>
-        <p className="mt-4 rounded-[var(--radius-control)] bg-warning-bg px-3 py-2 text-xs text-warning">
-          Browser-only localStorage authentication — for prototype / internal
-          offline use. Not suitable for secure production authentication.
-        </p>
       </Card>
 
       <ConfirmDialog
@@ -197,9 +192,9 @@ export function SettingsPanel({ variant = "user" }: { variant?: "user" | "admin"
         open={resetOpen}
         onClose={() => setResetOpen(false)}
         onConfirm={handleReset}
-        title="Reset Application Data"
-        message="This clears users, history, activity, and settings in this browser, then recreates the default admin account. You will be logged out."
-        confirmLabel="Reset Application"
+        title="Reset Local Data"
+        message="This clears history, activity, and settings in this browser only. Firebase users are not deleted. You will be logged out."
+        confirmLabel="Reset Local Data"
         danger
       />
     </div>

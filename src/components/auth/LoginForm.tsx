@@ -1,11 +1,5 @@
 "use client";
 
-/**
- * This application uses browser-only localStorage authentication.
- * It is intended for prototype/demo/internal offline use and is NOT
- * suitable for secure production authentication.
- */
-
 import { useState, FormEvent, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, User } from "lucide-react";
@@ -48,9 +42,8 @@ export function LoginForm() {
 
     submittingRef.current = true;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 400));
 
-    const result = login(idValue, passwordValue, remember);
+    const result = await login(idValue, passwordValue, remember);
     setLoading(false);
     submittingRef.current = false;
 
@@ -94,7 +87,7 @@ export function LoginForm() {
           </p>
         </div>
         <p className="relative text-xs text-indigo-200/80">
-          Frontend-only · Local storage · Version 1.0.0
+          Powered by Firebase Auth · Version 1.0.0
         </p>
       </aside>
 
@@ -108,7 +101,7 @@ export function LoginForm() {
           <div className="mb-6">
             <h1 className="text-page-title">Sign in</h1>
             <p className="mt-1 text-body">
-              Welcome back. Enter your credentials to continue.
+              Sign in with the User ID and password given by your admin.
             </p>
           </div>
 
@@ -135,7 +128,10 @@ export function LoginForm() {
                   User ID
                 </label>
                 <div className="relative">
-                  <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                  <User
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+                    aria-hidden="true"
+                  />
                   <input
                     id="userId"
                     name="userId"
@@ -146,7 +142,7 @@ export function LoginForm() {
                     onInput={(e) =>
                       setUserId((e.target as HTMLInputElement).value)
                     }
-                    className="field-input pl-10"
+                    className="field-input with-leading-icon"
                     placeholder="Enter your User ID"
                     required
                   />
@@ -161,7 +157,10 @@ export function LoginForm() {
                   Password
                 </label>
                 <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                  <Lock
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+                    aria-hidden="true"
+                  />
                   <input
                     id="password"
                     name="password"
@@ -172,7 +171,7 @@ export function LoginForm() {
                     onInput={(e) =>
                       setPassword((e.target as HTMLInputElement).value)
                     }
-                    className="field-input pl-10 pr-11"
+                    className="field-input with-leading-icon with-trailing-icon"
                     placeholder="Enter your password"
                     required
                   />

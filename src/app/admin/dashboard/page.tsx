@@ -20,10 +20,8 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { Card, CardHeader } from "@/components/common/Card";
 import { StatCardSkeleton } from "@/components/common/Skeleton";
 import { useAuth } from "@/context/AuthContext";
-import {
-  getAdminDashboardStats,
-  getActivityLogs,
-} from "@/lib/storage";
+import { getActivityLogs, getHistory, getAllStats } from "@/lib/storage";
+import { getFirebaseUsers } from "@/lib/firebaseAuth";
 import { ActivityLog, ACTIVITY_ACTION_LABELS } from "@/lib/types";
 import { formatDisplayDateTime } from "@/lib/utils";
 import { APP_NAME, APP_VERSION, greetingForHour } from "@/lib/branding";
@@ -45,9 +43,46 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     setGreeting(greetingForHour());
-    setStats(getAdminDashboardStats());
-    setRecent(getActivityLogs().slice(0, 8));
-    setReady(true);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const users = await getFirebaseUsers();
+        const history = getHistory();
+        const allStats = getAllStats();
+        const today = new Date().toISOString().slice(0, 10);
+        const month = today.slice(0, 7);
+
+        if (cancelled) return;
+        setStats({
+          totalUsers: users.length,
+          activeUsers: users.filter((u) => u.status === "active").length,
+          inactiveUsers: users.filter((u) => u.status === "inactive").length,
+          totalSessions: history.length,
+          todaySessions: history.filter((h) => h.date.startsWith(today)).length,
+          totalDownloads: Object.values(allStats).reduce(
+            (sum, s) => sum + (s.downloadedImages || 0),
+            0
+          ),
+          usersCreatedThisMonth: users.filter((u) =>
+            u.createdAt.startsWith(month)
+          ).length,
+        });
+      } catch {
+        if (!cancelled) {
+          setStats((prev) => prev);
+        }
+      } finally {
+        if (!cancelled) {
+          setRecent(getActivityLogs().slice(0, 8));
+          setReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const displayName = user?.name?.split(" ")[0] || "Admin";

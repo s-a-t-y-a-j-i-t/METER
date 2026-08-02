@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { Upload, ImageIcon } from "lucide-react";
+import { Upload, ImageIcon, Camera } from "lucide-react";
 import { validateImageFile, verifyImageDecodable, cn } from "@/lib/utils";
 import { useToast } from "@/context/ToastContext";
 
@@ -13,8 +13,14 @@ interface MeterUploaderProps {
 export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [checking, setChecking] = useState(false);
+
+  const clearInputs = useCallback(() => {
+    if (inputRef.current) inputRef.current.value = "";
+    if (cameraRef.current) cameraRef.current.value = "";
+  }, []);
 
   const handleFile = useCallback(
     async (file: File | undefined) => {
@@ -25,7 +31,7 @@ export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
       const result = validateImageFile(file);
       if (!result.ok) {
         toast(result.error || "Please upload a valid JPG, PNG, or WEBP image.", "error");
-        if (inputRef.current) inputRef.current.value = "";
+        clearInputs();
         return;
       }
 
@@ -39,7 +45,7 @@ export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
             "Unable to process this image. Try another file under 10 MB with a reasonable resolution.",
             "error"
           );
-          if (inputRef.current) inputRef.current.value = "";
+          clearInputs();
           return;
         }
         onFileSelect(file, url);
@@ -48,43 +54,33 @@ export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
         toast("Unable to process this image. Please try another image.", "error");
       } finally {
         setChecking(false);
-        if (inputRef.current) inputRef.current.value = "";
+        clearInputs();
       }
     },
-    [onFileSelect, toast]
+    [clearInputs, onFileSelect, toast]
   );
+
+  const busy = disabled || checking;
 
   return (
     <div
-      role="button"
-      tabIndex={disabled || checking ? -1 : 0}
-      aria-label="Upload meter image"
-      aria-disabled={disabled || checking}
-      onKeyDown={(e) => {
-        if (disabled || checking) return;
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          inputRef.current?.click();
-        }
-      }}
       onDragOver={(e) => {
         e.preventDefault();
-        if (!disabled && !checking) setDragging(true);
+        if (!busy) setDragging(true);
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => {
         e.preventDefault();
         setDragging(false);
-        if (disabled || checking) return;
+        if (busy) return;
         void handleFile(e.dataTransfer.files?.[0]);
       }}
-      onClick={() => !disabled && !checking && inputRef.current?.click()}
       className={cn(
-        "flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-12 text-center transition sm:py-16",
+        "flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-12 text-center transition sm:py-16",
         dragging
           ? "border-primary bg-primary-light"
           : "border-border bg-surface hover:border-primary/50 hover:bg-bg-muted",
-        (disabled || checking) && "pointer-events-none opacity-60"
+        busy && "pointer-events-none opacity-60"
       )}
     >
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-light text-primary">
@@ -98,14 +94,31 @@ export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
       <p className="mt-2 max-w-sm text-body">
         {checking
           ? "Processing image..."
-          : "Drag & drop your meter photo here to start"}
+          : "Drag & drop, browse files, or take a photo of the meter"}
       </p>
-      <p className="my-2 text-caption font-medium uppercase tracking-wide">
+      <p className="my-3 text-caption font-medium uppercase tracking-wide">
         or
       </p>
-      <span className="inline-flex h-11 items-center rounded-xl bg-primary px-4 text-sm font-medium text-white">
-        Browse Files
-      </span>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+          className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-white transition hover:opacity-95"
+        >
+          <Upload className="h-4 w-4" aria-hidden="true" />
+          Browse Files
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => cameraRef.current?.click()}
+          className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-medium text-fg transition hover:border-primary/50 hover:bg-bg-muted"
+        >
+          <Camera className="h-4 w-4" aria-hidden="true" />
+          Take Photo
+        </button>
+      </div>
       <p className="mt-4 text-xs text-muted">
         JPG, JPEG, PNG, WEBP · Max 10 MB
       </p>
@@ -115,8 +128,18 @@ export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
         accept="image/jpeg,image/jpg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
         className="hidden"
         onChange={(e) => void handleFile(e.target.files?.[0])}
-        disabled={disabled || checking}
+        disabled={busy}
         aria-label="Choose meter image file"
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => void handleFile(e.target.files?.[0])}
+        disabled={busy}
+        aria-label="Take meter photo with camera"
       />
     </div>
   );

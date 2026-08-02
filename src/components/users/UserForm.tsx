@@ -89,13 +89,17 @@ export function UserForm({
     const next: Partial<Record<keyof UserFormValues, string>> = {};
     if (!merged.name.trim()) next.name = "Full name is required.";
     if (!merged.id.trim()) next.id = "User ID is required.";
+    else if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,31}$/.test(merged.id.trim())) {
+      next.id =
+        "2–32 chars: letters, numbers, _ or - (start with letter/number).";
+    }
     if (merged.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(merged.email)) {
       next.email = "Enter a valid email address.";
     }
     if (mode === "create") {
       if (!merged.password) next.password = "Password is required.";
-      else if (merged.password.length < 4) {
-        next.password = "Password must be at least 4 characters.";
+      else if (merged.password.length < 6) {
+        next.password = "Password must be at least 6 characters.";
       }
       if (!merged.confirmPassword) {
         next.confirmPassword = "Confirm password is required.";
@@ -145,27 +149,36 @@ export function UserForm({
             onInput={(e) => set("id", (e.target as HTMLInputElement).value)}
             disabled={mode === "edit"}
             autoComplete="username"
+            placeholder="e.g. ramesh01"
             required
           />
+          {mode === "create" && (
+            <p className="mt-1 text-xs text-muted">
+              User will sign in with this User ID and the password below.
+            </p>
+          )}
           {errors.id && <p className="mt-1 text-xs text-danger">{errors.id}</p>}
         </div>
       </div>
 
       <div>
         <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-text-secondary">
-          Email
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          className={fieldClass}
-          value={values.email}
-          onChange={(e) => set("email", e.target.value)}
-          onInput={(e) => set("email", (e.target as HTMLInputElement).value)}
-          autoComplete="email"
-          placeholder="optional"
-        />
+          Contact email <span className="font-normal text-muted">(optional)</span>
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            className={fieldClass}
+            value={values.email}
+            onChange={(e) => set("email", e.target.value)}
+            onInput={(e) => set("email", (e.target as HTMLInputElement).value)}
+            autoComplete="email"
+            placeholder="optional"
+          />
+        <p className="mt-1 text-xs text-muted">
+          Login uses User ID + password. Email is not required for sign-in.
+        </p>
         {errors.email && <p className="mt-1 text-xs text-danger">{errors.email}</p>}
       </div>
 

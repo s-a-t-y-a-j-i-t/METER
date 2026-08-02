@@ -1,7 +1,7 @@
 /**
- * This application uses browser-only localStorage authentication.
- * It is intended for prototype/demo/internal offline use and is NOT
- * suitable for secure production authentication.
+ * App domain types.
+ * Authentication is handled by Firebase Auth; user profiles live in Firestore.
+ * Meter history, stats, and activity logs still use browser localStorage.
  */
 
 export type UserRole = "admin" | "user";
@@ -11,7 +11,6 @@ export interface AppUser {
   id: string;
   name: string;
   email: string;
-  password: string;
   role: UserRole;
   status: UserStatus;
   createdAt: string;
@@ -142,8 +141,6 @@ export const ACTIVITY_ACTION_LABELS: Record<ActivityAction, string> = {
 };
 
 export const STORAGE_KEYS = {
-  USERS: "app_users",
-  AUTH: "auth_user",
   HISTORY: "meter_history",
   SETTINGS: "app_settings",
   INITIALIZED: "app_initialized",
