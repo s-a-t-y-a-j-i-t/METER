@@ -14,6 +14,7 @@ import {
   drawOverlay,
   getOverlayGeometry,
   hitTestOverlay,
+  ensureMeterFontLoaded,
   OverlayHitTarget,
 } from "@/lib/meterOverlay";
 import { Button } from "@/components/common/Button";
@@ -73,10 +74,21 @@ export function MeterCanvas({
   const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [fontReady, setFontReady] = useState(false);
 
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureMeterFontLoaded().then(() => {
+      if (!cancelled) setFontReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const draw = useCallback(() => {
     const canvas = displayCanvasRef.current;
@@ -98,7 +110,7 @@ export function MeterCanvas({
         showHandles: true,
       });
     }
-  }, [settings, showOverlay, adjustments]);
+  }, [settings, showOverlay, adjustments, fontReady]);
 
   useEffect(() => {
     setReady(false);
@@ -448,27 +460,34 @@ export function renderFinalCanvas(
   adjustments: ImageAdjustments = DEFAULT_IMAGE_ADJUSTMENTS
 ): Promise<HTMLCanvasElement> {
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
+    void (async () => {
       try {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Canvas unavailable"));
-          return;
-        }
-        drawAdjustedImage(ctx, img, canvas.width, canvas.height, adjustments);
-        if (showOverlay && settings.text.trim()) {
-          drawOverlay(ctx, canvas.width, canvas.height, settings);
-        }
-        resolve(canvas);
+        await ensureMeterFontLoaded();
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              reject(new Error("Canvas unavailable"));
+              return;
+            }
+            drawAdjustedImage(ctx, img, canvas.width, canvas.height, adjustments);
+            if (showOverlay && settings.text.trim()) {
+              drawOverlay(ctx, canvas.width, canvas.height, settings);
+            }
+            resolve(canvas);
+          } catch (err) {
+            reject(err instanceof Error ? err : new Error("Render failed"));
+          }
+        };
+        img.onerror = () => reject(new Error("Image load failed"));
+        img.src = imageUrl;
       } catch (err) {
-        reject(err instanceof Error ? err : new Error("Render failed"));
+        reject(err instanceof Error ? err : new Error("Font load failed"));
       }
-    };
-    img.onerror = () => reject(new Error("Image load failed"));
-    img.src = imageUrl;
+    })();
   });
 }

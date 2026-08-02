@@ -253,7 +253,7 @@ export function MeterEditorWorkspace() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start lg:gap-6">
-        <section className="min-w-0 space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-card)] sm:p-4">
+        <section className="order-1 min-w-0 space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-card)] sm:p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-card-title">Meter Image</h2>
             <p className="max-w-[50%] truncate text-caption" title={file?.name}>
@@ -276,7 +276,22 @@ export function MeterEditorWorkspace() {
           />
         </section>
 
-        <aside className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-2">
+        {/* Mobile: Preview/Download right under image. Desktop: full-width below grid. */}
+        <div className="order-2 min-w-0 lg:order-3 lg:col-span-2">
+          <DownloadButtons
+            imageUrl={imageUrl}
+            settings={settings}
+            adjustments={adjustments}
+            showOverlay={applied}
+            onEditAgain={() =>
+              toast("Continue editing the overlay controls above.", "info")
+            }
+            onReset={handleReset}
+            onDownloaded={handleDownloaded}
+          />
+        </div>
+
+        <aside className="order-3 min-w-0 space-y-4 lg:order-2 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-2">
           <h2 className="text-card-title">Controls</h2>
 
           <ImageAdjustControls
@@ -300,6 +315,14 @@ export function MeterEditorWorkspace() {
             onApply={() => void handleApply()}
             applied={applied}
             applying={matchingScreen}
+            transparentBackground={settings.background === "transparent"}
+            onTransparentBackgroundChange={(on) =>
+              setSettings((s) => ({
+                ...s,
+                background: on ? "transparent" : "custom",
+                opacity: on ? s.opacity : 1,
+              }))
+            }
           />
 
           {applied && (
@@ -339,18 +362,6 @@ export function MeterEditorWorkspace() {
           <ButtonResetRow onReset={handleReset} />
         </aside>
       </div>
-
-      <DownloadButtons
-        imageUrl={imageUrl}
-        settings={settings}
-        adjustments={adjustments}
-        showOverlay={applied}
-        onEditAgain={() =>
-          toast("Continue editing the overlay controls above.", "info")
-        }
-        onReset={handleReset}
-        onDownloaded={handleDownloaded}
-      />
     </div>
   );
 }

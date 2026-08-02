@@ -16,6 +16,8 @@ interface ReadingEditorProps {
   onApply: () => void;
   applied: boolean;
   applying?: boolean;
+  transparentBackground?: boolean;
+  onTransparentBackgroundChange?: (value: boolean) => void;
 }
 
 export function ReadingEditor({
@@ -28,6 +30,8 @@ export function ReadingEditor({
   onApply,
   applied,
   applying,
+  transparentBackground,
+  onTransparentBackgroundChange,
 }: ReadingEditorProps) {
   return (
     <section className="space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-[var(--shadow-card)] sm:p-5">
@@ -75,6 +79,21 @@ export function ReadingEditor({
           </p>
         )}
       </div>
+
+      <label className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[var(--radius-control)] border border-border bg-bg-muted px-3 text-sm text-text">
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-[var(--primary)]"
+          checked={!!transparentBackground}
+          onChange={(e) => onTransparentBackgroundChange?.(e.target.checked)}
+        />
+        <span>
+          Transparent background
+          <span className="mt-0.5 block text-xs text-muted">
+            Number only — peeche koi box nahi
+          </span>
+        </span>
+      </label>
 
       <Button
         type="button"
@@ -175,6 +194,30 @@ export function EditorControls({
         </Button>
       )}
 
+      <button
+        type="button"
+        onClick={() =>
+          onChange({
+            ...settings,
+            background:
+              settings.background === "transparent" ? "custom" : "transparent",
+            opacity: settings.background === "transparent" ? settings.opacity : 1,
+          })
+        }
+        className={cn(
+          "flex min-h-11 w-full items-center justify-between rounded-[var(--radius-control)] border px-3 text-sm font-medium transition",
+          settings.background === "transparent"
+            ? "border-primary bg-primary-light text-primary"
+            : "border-border bg-bg-muted text-text hover:border-primary/40"
+        )}
+        aria-pressed={settings.background === "transparent"}
+      >
+        <span>Transparent Background</span>
+        <span className="text-xs font-normal text-muted">
+          {settings.background === "transparent" ? "On — only numbers" : "Off"}
+        </span>
+      </button>
+
       {onApplyLook && (
         <div className="grid grid-cols-3 gap-2">
           <Button
@@ -233,7 +276,7 @@ export function EditorControls({
               set("digitStyle", e.target.value as OverlayDigitStyle)
             }
           >
-            <option value="seven-segment">7-Segment (meter look)</option>
+            <option value="seven-segment">Meter LCD Font (DSEG7)</option>
             <option value="lcd">LCD Mono</option>
             <option value="mono">Plain Mono</option>
           </select>

@@ -10,7 +10,46 @@ import {
   drawAdjustedImage,
 } from "./utils";
 
-/** 7-segment bit masks: a b c d e f g */
+/** Real electricity-meter style 7-segment LCD font (DSEG7 Classic). */
+export const METER_LCD_FONT = "DSEG7 Classic";
+
+let meterFontPromise: Promise<boolean> | null = null;
+
+/** Ensure the meter LCD font is loaded before canvas draw/export. */
+export function ensureMeterFontLoaded(): Promise<boolean> {
+  if (typeof document === "undefined") return Promise.resolve(false);
+  if (!meterFontPromise) {
+    meterFontPromise = Promise.all([
+      document.fonts.load(`400 64px "${METER_LCD_FONT}"`),
+      document.fonts.load(`700 64px "${METER_LCD_FONT}"`),
+    ])
+      .then(() => document.fonts.check(`400 16px "${METER_LCD_FONT}"`))
+      .catch(() => false);
+  }
+  return meterFontPromise;
+}
+
+function meterFontCss(
+  settings: OverlaySettings,
+  fontSize: number,
+  darkness = 0.55
+): string {
+  const bold =
+    settings.fontWeight === "bold" || darkness >= 0.55 ? "700" : "400";
+  return `${bold} ${fontSize}px "${METER_LCD_FONT}", monospace`;
+}
+
+function toGhostPattern(text: string): string {
+  return [...text]
+    .map((ch) => {
+      if (/\d/.test(ch)) return "8";
+      if (ch === "." || ch === "," || ch === "-" || ch === " ") return ch;
+      return "8";
+    })
+    .join("");
+}
+
+/** 7-segment bit masks: a b c d e f g — fallback if font unavailable */
 const SEGMENTS: Record<string, number> = {
   "0": 0b1111110,
   "1": 0b0110000,
@@ -77,14 +116,28 @@ export function measureOverlayBox(
   const text = settings.text || "0";
 
   if (settings.digitStyle === "seven-segment") {
-    let w = 0;
-    for (const ch of text) {
-      if (/\d|-/.test(ch)) w += digitCellWidth(fontSize, spacing);
-      else w += punctuationWidth(fontSize, ch) + spacing * 0.35;
+    const darkness = Math.max(0, Math.min(100, settings.digitDarkness ?? 55)) / 100;
+    ctx.font = meterFontCss(settings, fontSize, darkness);
+    if (spacing > 0 && "letterSpacing" in ctx) {
+      (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+        `${spacing}px`;
     }
+    const metrics = ctx.measureText(text);
+    if ("letterSpacing" in ctx) {
+      (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+        "0px";
+    }
+    // Fallback estimate if font not ready yet
+    const w =
+      metrics.width > 4
+        ? metrics.width
+        : [...text].reduce((acc, ch) => {
+            if (/\d|-/.test(ch)) return acc + digitCellWidth(fontSize, spacing);
+            return acc + punctuationWidth(fontSize, ch) + spacing * 0.35;
+          }, 0);
     return {
-      boxW: Math.max(fontSize, w - spacing * 0.2) + pad * 2,
-      boxH: fontSize * 1.12 + pad * 2,
+      boxW: Math.max(fontSize, w) + pad * 2,
+      boxH: fontSize * 1.2 + pad * 2,
     };
   }
 
@@ -243,6 +296,49 @@ function drawSevenSegmentText(
       x += punctuationWidth(fontSize, ch) + spacing * 0.35;
     }
   }
+}
+
+function drawMeterLcdFontText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  settings: OverlaySettings,
+  fontSize: number,
+  spacing: number,
+  color: string,
+  softness: number,
+  opacity: number,
+  align: OverlaySettings["align"],
+  textX: number,
+  options?: { ghost?: boolean; ghostColor?: string }
+) {
+  const darkness = Math.max(0, Math.min(100, settings.digitDarkness ?? 55)) / 100;
+  ctx.save();
+  ctx.font = meterFontCss(settings, fontSize, darkness);
+  ctx.textBaseline = "middle";
+  ctx.textAlign =
+    align === "left" ? "left" : align === "right" ? "right" : "center";
+  if (spacing > 0 && "letterSpacing" in ctx) {
+    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+      `${spacing}px`;
+  }
+
+  // Ghost inactive segments (888… under reading) — classic LCD look
+  if (options?.ghost) {
+    ctx.save();
+    ctx.globalAlpha = 0.14;
+    ctx.fillStyle = options.ghostColor || "#9aa090";
+    ctx.fillText(toGhostPattern(text), textX, 0);
+    ctx.restore();
+  }
+
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = color;
+  if (softness > 0) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = softness * 1.4;
+  }
+  ctx.fillText(text, textX, 0);
+  ctx.restore();
 }
 
 function drawSpacedText(
@@ -465,33 +561,56 @@ export function drawOverlay(
     lctx.translate(padLayer + boxW / 2, padLayer + boxH / 2);
 
     if (settings.digitStyle === "seven-segment") {
-      let contentW = 0;
-      for (const ch of text) {
-        if (/\d|-/.test(ch)) contentW += digitCellWidth(fontSize, spacing);
-        else contentW += punctuationWidth(fontSize, ch) + spacing * 0.35;
-      }
-      contentW = Math.max(0, contentW - spacing * 0.2);
+      let textX = 0;
+      if (settings.align === "left") textX = -boxW / 2 + pad;
+      else if (settings.align === "right") textX = boxW / 2 - pad;
 
-      let startX = -boxW / 2 + pad;
-      if (settings.align === "center") startX = -contentW / 2;
-      else if (settings.align === "right") startX = boxW / 2 - pad - contentW;
+      const fontOk =
+        typeof document !== "undefined" &&
+        document.fonts.check(`400 16px "${METER_LCD_FONT}"`);
 
-      drawSevenSegmentText(
-        lctx,
-        text,
-        startX,
-        0,
-        fontSize,
-        spacing,
-        look.color,
-        look.softness,
-        {
-          ghost,
-          ghostColor,
-          opacity: look.opacity,
-          thickness: look.thickness,
+      if (fontOk) {
+        drawMeterLcdFontText(
+          lctx,
+          text,
+          settings,
+          fontSize,
+          spacing,
+          look.color,
+          look.softness,
+          look.opacity,
+          settings.align,
+          textX,
+          { ghost, ghostColor }
+        );
+      } else {
+        // Geometric fallback until font finishes loading
+        let contentW = 0;
+        for (const ch of text) {
+          if (/\d|-/.test(ch)) contentW += digitCellWidth(fontSize, spacing);
+          else contentW += punctuationWidth(fontSize, ch) + spacing * 0.35;
         }
-      );
+        contentW = Math.max(0, contentW - spacing * 0.2);
+        let startX = -boxW / 2 + pad;
+        if (settings.align === "center") startX = -contentW / 2;
+        else if (settings.align === "right") startX = boxW / 2 - pad - contentW;
+        drawSevenSegmentText(
+          lctx,
+          text,
+          startX,
+          0,
+          fontSize,
+          spacing,
+          look.color,
+          look.softness,
+          {
+            ghost,
+            ghostColor,
+            opacity: look.opacity,
+            thickness: look.thickness,
+          }
+        );
+      }
     } else {
       if (settings.digitStyle === "lcd") {
         lctx.font = `${settings.fontWeight} ${fontSize}px "Courier New", "Lucida Console", monospace`;
@@ -870,13 +989,16 @@ export function buildNaturalOverlayPatch(
 ): OverlaySettings {
   const bg = parseHex(colors.background);
   const isLightLcd = bg ? luminance(bg.r, bg.g, bg.b) > 110 : true;
+  const keepTransparent = base.background === "transparent";
 
   return {
     ...base,
-    background: "custom",
-    customBackground: colors.background,
+    background: keepTransparent ? "transparent" : "custom",
+    customBackground: keepTransparent
+      ? base.customBackground
+      : colors.background,
     textColor: colors.textColor,
-    opacity: 1,
+    opacity: keepTransparent ? base.opacity : 1,
     borderRadius: Math.min(base.borderRadius ?? 1, 2),
     digitStyle: "seven-segment",
     letterSpacing: base.letterSpacing ?? 3,
@@ -884,8 +1006,12 @@ export function buildNaturalOverlayPatch(
     digitOpacity: isLightLcd ? 0.8 : 0.9,
     digitDarkness: base.digitDarkness ?? 55,
     ghostSegments: true,
-    dustIntensity: Math.max(base.dustIntensity ?? 0.55, 0.45),
-    padding: Math.min(Math.max(base.padding ?? 6, 4), 10),
+    dustIntensity: keepTransparent
+      ? Math.min(base.dustIntensity ?? 0.35, 0.35)
+      : Math.max(base.dustIntensity ?? 0.55, 0.45),
+    padding: keepTransparent
+      ? Math.min(base.padding ?? 4, 6)
+      : Math.min(Math.max(base.padding ?? 6, 4), 10),
   };
 }
 
