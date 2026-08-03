@@ -92,6 +92,29 @@ body {
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
+/* Default meter LCD font — DS-Digital */
+@font-face {
+  font-family: "DS-Digital";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/ds-digital.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DS-Digital";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/ds-digital-bold.ttf") format("truetype");
+}
+
+.font-meter-lcd {
+  font-family: "DS-Digital", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
 /* Typography scale */
 .text-page-title {
   font-size: 1.5rem;

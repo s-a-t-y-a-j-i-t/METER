@@ -16,24 +16,43 @@ export function extractMeterReading(text: string): string | null {
   if (!text?.trim()) return null;
 
   // Soft OCR cleanup for common digit confusions near digits
-  const normalized = text
-    .replace(/[|]/g, "1")
-    .replace(/(\d)[Oo]/g, "$10")
-    .replace(/[Oo](\d)/g, "0$1")
-    .replace(/(\d)[Il]/g, "$11")
-    .replace(/[Il](\d)/g, "1$1")
-    .replace(/(\d)[Ss]/g, "$15")
-    .replace(/[Ss](\d)/g, "5$1")
-    .replace(/(\d)[Bb]/g, "$18")
-    .replace(/[Bb](\d)/g, "8$1");
+  let normalized = text
+    .replace(/[|lI!]/g, "1")
+    .replace(/[OoQ]/g, "0")
+    .replace(/[Ss]/g, "5")
+    .replace(/[Bb]/g, "8")
+    .replace(/[Zz]/g, "2")
+    .replace(/[Gg]/g, "6")
+    .replace(/[Tt]/g, "7")
+    .replace(/[Aa]/g, "4");
+
+  // OCR often inserts spaces between LCD digits: "1 2 3 4 5.6" → "12345.6"
+  const spacedDigits = normalized.match(
+    /(?:\d[\s]*){3,}\d(?:\s*[.,]\s*\d{1,3})?/g
+  );
+  if (spacedDigits) {
+    for (const chunk of spacedDigits) {
+      const joined = chunk.replace(/\s+/g, "").replace(/,/g, ".");
+      normalized += `\n${joined}`;
+    }
+  }
+
+  // Collapse leftover whitespace between digits
+  normalized = normalized.replace(/(\d)\s+(?=\d)/g, "$1");
 
   const candidates = new Set<string>();
 
-  const withCommas = normalized.match(/\d{1,3}(?:,\d{3})+(?:\.\d{1,3})?/g);
+  const withCommas = normalized.match(/\d{1,3}(?:,\d{3})+(?:\.\d{1,4})?/g);
   withCommas?.forEach((c) => candidates.add(c));
 
-  const plain = normalized.match(/\d{2,}(?:\.\d{1,3})?/g);
+  const plain = normalized.match(/\d{3,}(?:\.\d{1,4})?/g);
   plain?.forEach((c) => candidates.add(c));
+
+  // Shorter readings (2–3 digits) as fallback
+  if (candidates.size === 0) {
+    const short = normalized.match(/\d{2,}(?:\.\d{1,4})?/g);
+    short?.forEach((c) => candidates.add(c));
+  }
 
   if (candidates.size === 0) return null;
 
@@ -42,25 +61,26 @@ export function extractMeterReading(text: string): string | null {
     const digitCount = compact.replace(".", "").length;
     let score = digitCount * 2;
 
-    // Typical meter readings are 4–8 significant digits
-    if (digitCount >= 4 && digitCount <= 8) score += 8;
-    else if (digitCount === 3) score += 3;
-    else if (digitCount > 10) score -= 6;
+    // Typical meter readings are 4–10 significant digits
+    if (digitCount >= 4 && digitCount <= 10) score += 10;
+    else if (digitCount === 3) score += 4;
+    else if (digitCount > 12) score -= 8;
 
-    if (compact.includes(".")) score += 2;
-    if (/^0+\d/.test(compact)) score += 3; // leading zeros common on meters
-    if (/^(19|20)\d{2}$/.test(compact)) score -= 5; // likely a year
+    if (compact.includes(".")) score += 3;
+    if (/^0+\d/.test(compact)) score += 4; // leading zeros common on meters
+    if (/^(19|20)\d{2}$/.test(compact)) score -= 8; // likely a year
     if (raw.includes(",")) score += 1;
 
     return { raw, compact, score };
   });
 
-  scored.sort((a, b) => b.score - a.score || b.compact.length - a.compact.length);
+  scored.sort(
+    (a, b) => b.score - a.score || b.compact.length - a.compact.length
+  );
   const best = scored[0];
   if (!best || best.score < 4) return null;
 
-  // Prefer preserving original grouping from OCR when commas present
-  return best.raw;
+  return best.raw.includes(",") ? best.raw : best.compact;
 }
 
 /** Validate a manually entered meter reading. */

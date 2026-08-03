@@ -10,8 +10,41 @@ import {
   drawAdjustedImage,
 } from "./utils";
 
-/** 7-segment bit masks: a b c d e f g — classic LCD (image reference).
- *  Digit 7 = a+b+c only (3 segments), NOT the 4-segment calculator “7”. */
+/** Default meter LCD font — DS-Digital */
+export const METER_LCD_FONT = "DS-Digital";
+
+let meterFontPromise: Promise<boolean> | null = null;
+
+/** Ensure DS-Digital is loaded before canvas draw/export. */
+export function ensureMeterFontLoaded(): Promise<boolean> {
+  if (typeof document === "undefined") return Promise.resolve(false);
+  if (!meterFontPromise) {
+    meterFontPromise = Promise.all([
+      document.fonts.load(`400 64px "${METER_LCD_FONT}"`),
+      document.fonts.load(`700 64px "${METER_LCD_FONT}"`),
+    ])
+      .then(() => document.fonts.check(`400 16px "${METER_LCD_FONT}"`))
+      .catch(() => false);
+  }
+  return meterFontPromise;
+}
+
+function meterFontCss(settings: OverlaySettings, fontSize: number): string {
+  const weight = settings.fontWeight === "bold" ? "700" : "400";
+  return `${weight} ${fontSize}px "${METER_LCD_FONT}", monospace`;
+}
+
+function toGhostPattern(text: string): string {
+  return [...text]
+    .map((ch) => {
+      if (/\d/.test(ch)) return "8";
+      if (ch === "." || ch === "," || ch === "-" || ch === " ") return ch;
+      return "8";
+    })
+    .join("");
+}
+
+/** 7-segment bit masks: a b c d e f g — geometric fallback if font unavailable */
 const SEGMENTS: Record<string, number> = {
   "0": 0b1111110,
   "1": 0b0110000,
@@ -67,7 +100,7 @@ function punctuationWidth(fontSize: number, ch: string): number {
 
 /** Measure overlay box size in canvas pixels for the current settings. */
 export function measureOverlayBox(
-  _ctx: CanvasRenderingContext2D,
+  ctx: CanvasRenderingContext2D,
   settings: OverlaySettings,
   canvasWidth: number
 ): { boxW: number; boxH: number } {
@@ -77,7 +110,29 @@ export function measureOverlayBox(
   const spacing = (settings.letterSpacing ?? 0) * scale;
   const text = settings.text || "0";
 
-  // Classic LCD cells only (reference image digits)
+  ctx.font = meterFontCss(settings, fontSize);
+  if (spacing > 0 && "letterSpacing" in ctx) {
+    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+      `${spacing}px`;
+  }
+  const metrics = ctx.measureText(text);
+  if ("letterSpacing" in ctx) {
+    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+      "0px";
+  }
+
+  const fontOk =
+    typeof document !== "undefined" &&
+    document.fonts.check(`400 16px "${METER_LCD_FONT}"`);
+
+  if (fontOk && metrics.width > 4) {
+    return {
+      boxW: Math.max(fontSize, metrics.width) + pad * 2,
+      boxH: fontSize * 1.25 + pad * 2,
+    };
+  }
+
+  // Geometric fallback estimate until DS-Digital loads
   const w = [...text].reduce((acc, ch) => {
     if (/\d|-/.test(ch)) return acc + digitCellWidth(fontSize, spacing);
     return acc + punctuationWidth(fontSize, ch) + spacing * 0.35;
@@ -227,6 +282,47 @@ function drawSevenSegmentText(
       x += punctuationWidth(fontSize, ch) + spacing * 0.35;
     }
   }
+}
+
+function drawMeterLcdFontText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  settings: OverlaySettings,
+  fontSize: number,
+  spacing: number,
+  color: string,
+  softness: number,
+  opacity: number,
+  align: OverlaySettings["align"],
+  textX: number,
+  options?: { ghost?: boolean; ghostColor?: string }
+) {
+  ctx.save();
+  ctx.font = meterFontCss(settings, fontSize);
+  ctx.textBaseline = "middle";
+  ctx.textAlign =
+    align === "left" ? "left" : align === "right" ? "right" : "center";
+  if (spacing > 0 && "letterSpacing" in ctx) {
+    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+      `${spacing}px`;
+  }
+
+  if (options?.ghost) {
+    ctx.save();
+    ctx.globalAlpha = 0.14;
+    ctx.fillStyle = options.ghostColor || "#9aa090";
+    ctx.fillText(toGhostPattern(text), textX, 0);
+    ctx.restore();
+  }
+
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = color;
+  if (softness > 0) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = softness * 1.4;
+  }
+  ctx.fillText(text, textX, 0);
+  ctx.restore();
 }
 
 function drawSpacedText(
@@ -448,33 +544,57 @@ export function drawOverlay(
   if (lctx) {
     lctx.translate(padLayer + boxW / 2, padLayer + boxH / 2);
 
-    // ONLY classic 7-segment LCD (reference 1234567890) — no other fonts
+    // Default: DS-Digital font; geometric fallback until font loads
     {
-      let contentW = 0;
-      for (const ch of text) {
-        if (/\d|-/.test(ch)) contentW += digitCellWidth(fontSize, spacing);
-        else contentW += punctuationWidth(fontSize, ch) + spacing * 0.35;
-      }
-      contentW = Math.max(0, contentW - spacing * 0.2);
-      let startX = -boxW / 2 + pad;
-      if (settings.align === "center") startX = -contentW / 2;
-      else if (settings.align === "right") startX = boxW / 2 - pad - contentW;
-      drawSevenSegmentText(
-        lctx,
-        text,
-        startX,
-        0,
-        fontSize,
-        spacing,
-        look.color,
-        look.softness,
-        {
-          ghost,
-          ghostColor,
-          opacity: look.opacity,
-          thickness: look.thickness,
+      const fontOk =
+        typeof document !== "undefined" &&
+        document.fonts.check(`400 16px "${METER_LCD_FONT}"`);
+
+      if (fontOk) {
+        let textX = 0;
+        if (settings.align === "left") textX = -boxW / 2 + pad;
+        else if (settings.align === "right") textX = boxW / 2 - pad;
+        drawMeterLcdFontText(
+          lctx,
+          text,
+          settings,
+          fontSize,
+          spacing,
+          look.color,
+          look.softness,
+          look.opacity,
+          settings.align,
+          textX,
+          { ghost, ghostColor }
+        );
+      } else {
+        let contentW = 0;
+        for (const ch of text) {
+          if (/\d|-/.test(ch)) contentW += digitCellWidth(fontSize, spacing);
+          else contentW += punctuationWidth(fontSize, ch) + spacing * 0.35;
         }
-      );
+        contentW = Math.max(0, contentW - spacing * 0.2);
+        let startX = -boxW / 2 + pad;
+        if (settings.align === "center") startX = -contentW / 2;
+        else if (settings.align === "right")
+          startX = boxW / 2 - pad - contentW;
+        drawSevenSegmentText(
+          lctx,
+          text,
+          startX,
+          0,
+          fontSize,
+          spacing,
+          look.color,
+          look.softness,
+          {
+            ghost,
+            ghostColor,
+            opacity: look.opacity,
+            thickness: look.thickness,
+          }
+        );
+      }
     }
 
     ctx.save();

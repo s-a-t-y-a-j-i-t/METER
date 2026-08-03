@@ -71,7 +71,7 @@ export function ReadingEditor({
           </p>
         ) : (
           <p id="reading-hint" className="mt-1.5 text-caption">
-            LCD digits only — same style as the reference (1234567890)
+            LCD digits use DS-Digital by default
           </p>
         )}
       </div>
