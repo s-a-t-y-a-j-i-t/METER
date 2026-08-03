@@ -47,6 +47,7 @@ export function MeterEditorWorkspace() {
   const objectUrlRef = useRef<string | null>(null);
   const historySavedRef = useRef(false);
   const userEditedReadingRef = useRef(false);
+  const imageSectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     userEditedReadingRef.current = userEditedReading;
@@ -110,12 +111,11 @@ export function MeterEditorWorkspace() {
     setConfidence(conf);
     setOcrFailed(false);
     setOcrSucceeded(true);
-    // Use ref so mid-OCR manual edits are never overwritten by a stale closure
     if (!userEditedReadingRef.current) {
       setReading(value);
       setReadingError("");
     }
-    toast("Meter reading detected. You can edit it if needed.", "success");
+    toast("Reading detected — check it, then Apply to Photo.", "success");
   };
 
   const handleFail = () => {
@@ -123,7 +123,7 @@ export function MeterEditorWorkspace() {
     setOcrSucceeded(false);
     setConfidence(null);
     setDetectedReading("");
-    toast("Reading could not be detected automatically.", "warning");
+    toast("Auto-detect failed — please type the number.", "warning");
   };
 
   const handleReadingChange = (value: string) => {
@@ -131,6 +131,9 @@ export function MeterEditorWorkspace() {
     setUserEditedReading(true);
     setReading(value);
     if (readingError) setReadingError("");
+    if (applied) {
+      setSettings((s) => ({ ...s, text: value.trim() }));
+    }
   };
 
   const matchScreenColors = useCallback(
@@ -167,10 +170,14 @@ export function MeterEditorWorkspace() {
       });
       setSettings(next);
       setApplied(true);
-      toast(
-        "Reading applied. Drag it over the meter digits for a seamless look.",
-        "success"
-      );
+      toast("Reading placed on photo — drag it into position.", "success");
+      // Mobile: scroll to image so user can place the number
+      requestAnimationFrame(() => {
+        imageSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
     } finally {
       setMatchingScreen(false);
     }
@@ -182,9 +189,9 @@ export function MeterEditorWorkspace() {
     try {
       const next = await matchScreenColors(settings);
       setSettings(next);
-      toast("Screen colors matched to the meter photo.", "success");
+      toast("Screen colors matched.", "success");
     } catch {
-      toast("Could not sample screen colors. Try a look preset.", "warning");
+      toast("Color match failed. Try Reset LCD look.", "warning");
     } finally {
       setMatchingScreen(false);
     }
@@ -198,7 +205,7 @@ export function MeterEditorWorkspace() {
   };
 
   const handleImageError = useCallback(() => {
-    toast("Unable to process this image. Please try another image.", "error");
+    toast("Unable to load this photo. Please try another.", "error");
   }, [toast]);
 
   const saveHistoryOnce = (finalReading: string) => {
@@ -250,49 +257,53 @@ export function MeterEditorWorkspace() {
     return <MeterUploader onFileSelect={handleFileSelect} />;
   }
 
+  const sharedDownloadProps = {
+    imageUrl,
+    settings,
+    adjustments,
+    showOverlay: applied,
+    onEditAgain: () =>
+      toast("Use Size and Darkness above to adjust the reading.", "info"),
+    onReset: handleReset,
+    onDownloaded: handleDownloaded,
+  };
+
   return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start lg:gap-6">
-        <section className="order-1 min-w-0 space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-card)] sm:p-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-card-title">Meter Image</h2>
-            <p className="max-w-[50%] truncate text-caption" title={file?.name}>
-              {file?.name}
-            </p>
+    <div className={applied ? "pb-24 lg:pb-0" : undefined}>
+      {/* Mobile step guide */}
+      <ol className="mb-3 flex gap-1 text-[11px] font-medium text-muted sm:hidden">
+        <li
+          className={`flex-1 rounded-lg px-2 py-2 text-center ${
+            !applied ? "bg-primary-light text-primary" : "bg-bg-muted"
+          }`}
+        >
+          1. Number
+        </li>
+        <li
+          className={`flex-1 rounded-lg px-2 py-2 text-center ${
+            applied ? "bg-primary-light text-primary" : "bg-bg-muted"
+          }`}
+        >
+          2. Drag
+        </li>
+        <li className="flex-1 rounded-lg bg-bg-muted px-2 py-2 text-center">
+          3. Save
+        </li>
+      </ol>
+
+      <div className="grid min-w-0 gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start lg:gap-6">
+        {/* Mobile: Reading first. Desktop: Image left. */}
+        <aside className="order-1 min-w-0 space-y-3 lg:order-2 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:space-y-4 lg:overflow-y-auto lg:pb-2">
+          <div className="flex items-center justify-between gap-2 lg:block">
+            <h2 className="text-card-title">1. Meter Number</h2>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="text-xs font-medium text-primary underline-offset-2 hover:underline lg:hidden"
+            >
+              New photo
+            </button>
           </div>
-          <MeterCanvas
-            imageUrl={imageUrl}
-            settings={settings}
-            adjustments={adjustments}
-            showOverlay={applied}
-            onSettingsChange={setSettings}
-            onImageError={handleImageError}
-            onTransformEnd={(next) => {
-              void (async () => {
-                const matched = await matchScreenColors(next);
-                setSettings(matched);
-              })();
-            }}
-          />
-        </section>
-
-        {/* Mobile: Preview/Download right under image. Desktop: full-width below grid. */}
-        <div className="order-2 min-w-0 lg:order-3 lg:col-span-2">
-          <DownloadButtons
-            imageUrl={imageUrl}
-            settings={settings}
-            adjustments={adjustments}
-            showOverlay={applied}
-            onEditAgain={() =>
-              toast("Continue editing the overlay controls above.", "info")
-            }
-            onReset={handleReset}
-            onDownloaded={handleDownloaded}
-          />
-        </div>
-
-        <aside className="order-3 min-w-0 space-y-4 lg:order-2 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-2">
-          <h2 className="text-card-title">Reading</h2>
 
           <OCRProcessor
             imageUrl={imageUrl}
@@ -320,63 +331,154 @@ export function MeterEditorWorkspace() {
             }
           />
 
-          <h2 className="text-card-title pt-1">Controls</h2>
-
-          <ImageAdjustControls
-            adjustments={adjustments}
-            onChange={setAdjustments}
-          />
-
           {applied && (
-            <EditorControls
-              settings={settings}
-              onChange={(next) => {
-                setSettings(next);
-                if (next.text !== reading) {
-                  setReading(next.text);
-                  setUserEditedReading(true);
+            <div className="hidden lg:block">
+              <EditorControls
+                settings={settings}
+                onChange={setSettings}
+                onResetPosition={() =>
+                  setSettings((s) => ({
+                    ...s,
+                    x: 50,
+                    y: 50,
+                    rotation: 0,
+                    skewX: 0,
+                  }))
                 }
-              }}
-              onResetPosition={() =>
-                setSettings((s) => ({ ...s, x: 50, y: 50, rotation: 0, skewX: 0 }))
-              }
-              onResetEditor={() => {
-                setSettings({
-                  ...DEFAULT_OVERLAY,
-                  text: reading.trim() || settings.text,
-                });
-                toast("Editor controls reset to real LCD look.", "info");
-              }}
-              onMatchScreen={() => void handleMatchScreen()}
-              matchingScreen={matchingScreen}
-              onApplyLook={(look) => {
-                setSettings((s) => applyMeterLookPreset(s, look));
-                toast(
-                  look === "lcd-green"
-                    ? "Real meter LCD look applied."
-                    : "Meter look preset applied.",
-                  "info"
-                );
-              }}
-            />
+                onResetEditor={() => {
+                  setSettings({
+                    ...DEFAULT_OVERLAY,
+                    text: reading.trim() || settings.text,
+                    background:
+                      settings.background === "transparent"
+                        ? "transparent"
+                        : DEFAULT_OVERLAY.background,
+                  });
+                  toast("Look reset to default LCD style.", "info");
+                }}
+                onMatchScreen={() => void handleMatchScreen()}
+                matchingScreen={matchingScreen}
+                onApplyLook={(look) => {
+                  setSettings((s) => applyMeterLookPreset(s, look));
+                  toast(
+                    look === "lcd-green"
+                      ? "Green LCD look applied."
+                      : "Meter look applied.",
+                    "info"
+                  );
+                }}
+              />
+            </div>
           )}
 
-          <ButtonResetRow onReset={handleReset} />
-        </aside>
-      </div>
-    </div>
-  );
-}
+          <div className="hidden lg:block">
+            <ImageAdjustControls
+              adjustments={adjustments}
+              onChange={setAdjustments}
+            />
+          </div>
 
-function ButtonResetRow({ onReset }: { onReset: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onReset}
-      className="inline-flex h-11 w-full items-center justify-center rounded-[var(--radius-control)] border border-border bg-surface text-sm font-medium text-text-secondary transition hover:bg-bg-muted"
-      aria-label="Reset and upload a new image"
-    >
-      Reset / New Image
-    </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="hidden h-11 w-full items-center justify-center rounded-[var(--radius-control)] border border-border bg-surface text-sm font-medium text-text-secondary transition hover:bg-bg-muted lg:inline-flex"
+            aria-label="Reset and upload a new image"
+          >
+            Reset / New Image
+          </button>
+        </aside>
+
+        {/* Photo + place number */}
+        <section
+          ref={imageSectionRef}
+          className="order-2 min-w-0 scroll-mt-16 space-y-3 rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-card)] sm:p-4 lg:order-1"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-card-title">
+              {applied ? "2. Place the number" : "Meter Photo"}
+            </h2>
+            <p className="max-w-[40%] truncate text-caption" title={file?.name}>
+              {file?.name}
+            </p>
+          </div>
+
+          {!applied && (
+            <p className="rounded-xl bg-bg-muted px-3 py-2 text-sm text-text-secondary sm:hidden">
+              First type or detect the number above, then tap{" "}
+              <span className="font-semibold text-primary">Apply to Photo</span>
+              .
+            </p>
+          )}
+
+          <MeterCanvas
+            imageUrl={imageUrl}
+            settings={settings}
+            adjustments={adjustments}
+            showOverlay={applied}
+            onSettingsChange={setSettings}
+            onImageError={handleImageError}
+            onTransformEnd={(next) => {
+              void (async () => {
+                const matched = await matchScreenColors(next);
+                setSettings(matched);
+              })();
+            }}
+          />
+
+          {/* Mobile edit controls under photo — only after apply */}
+          {applied && (
+            <div className="space-y-3 lg:hidden">
+              <EditorControls
+                settings={settings}
+                onChange={setSettings}
+                onResetPosition={() =>
+                  setSettings((s) => ({
+                    ...s,
+                    x: 50,
+                    y: 50,
+                    rotation: 0,
+                    skewX: 0,
+                  }))
+                }
+                onResetEditor={() => {
+                  setSettings({
+                    ...DEFAULT_OVERLAY,
+                    text: reading.trim() || settings.text,
+                    background:
+                      settings.background === "transparent"
+                        ? "transparent"
+                        : DEFAULT_OVERLAY.background,
+                  });
+                  toast("Look reset to default LCD style.", "info");
+                }}
+                onMatchScreen={() => void handleMatchScreen()}
+                matchingScreen={matchingScreen}
+                onApplyLook={(look) => {
+                  setSettings((s) => applyMeterLookPreset(s, look));
+                  toast(
+                    look === "lcd-green"
+                      ? "Green LCD look applied."
+                      : "Meter look applied.",
+                    "info"
+                  );
+                }}
+              />
+              <ImageAdjustControls
+                adjustments={adjustments}
+                onChange={setAdjustments}
+              />
+            </div>
+          )}
+        </section>
+
+        {/* Desktop save panel */}
+        <div className="order-3 hidden min-w-0 lg:col-span-2 lg:block">
+          <DownloadButtons {...sharedDownloadProps} />
+        </div>
+      </div>
+
+      {/* Mobile sticky save bar */}
+      {applied && <DownloadButtons {...sharedDownloadProps} sticky />}
+    </div>
   );
 }

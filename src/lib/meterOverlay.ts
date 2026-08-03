@@ -10,46 +10,8 @@ import {
   drawAdjustedImage,
 } from "./utils";
 
-/** Real electricity-meter style 7-segment LCD font (DSEG7 Classic). */
-export const METER_LCD_FONT = "DSEG7 Classic";
-
-let meterFontPromise: Promise<boolean> | null = null;
-
-/** Ensure the meter LCD font is loaded before canvas draw/export. */
-export function ensureMeterFontLoaded(): Promise<boolean> {
-  if (typeof document === "undefined") return Promise.resolve(false);
-  if (!meterFontPromise) {
-    meterFontPromise = Promise.all([
-      document.fonts.load(`400 64px "${METER_LCD_FONT}"`),
-      document.fonts.load(`700 64px "${METER_LCD_FONT}"`),
-    ])
-      .then(() => document.fonts.check(`400 16px "${METER_LCD_FONT}"`))
-      .catch(() => false);
-  }
-  return meterFontPromise;
-}
-
-function meterFontCss(
-  settings: OverlaySettings,
-  fontSize: number,
-  darkness = 0.55
-): string {
-  const bold =
-    settings.fontWeight === "bold" || darkness >= 0.55 ? "700" : "400";
-  return `${bold} ${fontSize}px "${METER_LCD_FONT}", monospace`;
-}
-
-function toGhostPattern(text: string): string {
-  return [...text]
-    .map((ch) => {
-      if (/\d/.test(ch)) return "8";
-      if (ch === "." || ch === "," || ch === "-" || ch === " ") return ch;
-      return "8";
-    })
-    .join("");
-}
-
-/** 7-segment bit masks: a b c d e f g — fallback if font unavailable */
+/** 7-segment bit masks: a b c d e f g — classic LCD (image reference).
+ *  Digit 7 = a+b+c only (3 segments), NOT the 4-segment calculator “7”. */
 const SEGMENTS: Record<string, number> = {
   "0": 0b1111110,
   "1": 0b0110000,
@@ -94,7 +56,7 @@ function luminance(r: number, g: number, b: number): number {
 }
 
 function digitCellWidth(fontSize: number, spacing: number): number {
-  return fontSize * 0.58 + spacing;
+  return fontSize * 0.55 + spacing;
 }
 
 function punctuationWidth(fontSize: number, ch: string): number {
@@ -105,7 +67,7 @@ function punctuationWidth(fontSize: number, ch: string): number {
 
 /** Measure overlay box size in canvas pixels for the current settings. */
 export function measureOverlayBox(
-  ctx: CanvasRenderingContext2D,
+  _ctx: CanvasRenderingContext2D,
   settings: OverlaySettings,
   canvasWidth: number
 ): { boxW: number; boxH: number } {
@@ -115,50 +77,15 @@ export function measureOverlayBox(
   const spacing = (settings.letterSpacing ?? 0) * scale;
   const text = settings.text || "0";
 
-  if (settings.digitStyle === "seven-segment") {
-    const darkness = Math.max(0, Math.min(100, settings.digitDarkness ?? 55)) / 100;
-    ctx.font = meterFontCss(settings, fontSize, darkness);
-    if (spacing > 0 && "letterSpacing" in ctx) {
-      (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
-        `${spacing}px`;
-    }
-    const metrics = ctx.measureText(text);
-    if ("letterSpacing" in ctx) {
-      (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
-        "0px";
-    }
-    // Fallback estimate if font not ready yet
-    const w =
-      metrics.width > 4
-        ? metrics.width
-        : [...text].reduce((acc, ch) => {
-            if (/\d|-/.test(ch)) return acc + digitCellWidth(fontSize, spacing);
-            return acc + punctuationWidth(fontSize, ch) + spacing * 0.35;
-          }, 0);
-    return {
-      boxW: Math.max(fontSize, w) + pad * 2,
-      boxH: fontSize * 1.2 + pad * 2,
-    };
-  }
-
-  if (settings.digitStyle === "lcd") {
-    ctx.font = `${settings.fontWeight} ${fontSize}px "Courier New", "Lucida Console", monospace`;
-  } else {
-    ctx.font = `${settings.fontWeight} ${fontSize}px ui-monospace, Consolas, monospace`;
-  }
-
-  if (spacing > 0) {
-    let w = 0;
-    const chars = [...text];
-    chars.forEach((ch, i) => {
-      w += ctx.measureText(ch).width;
-      if (i < chars.length - 1) w += spacing;
-    });
-    return { boxW: w + pad * 2, boxH: fontSize + pad * 2 };
-  }
-
-  const metrics = ctx.measureText(text);
-  return { boxW: metrics.width + pad * 2, boxH: fontSize + pad * 2 };
+  // Classic LCD cells only (reference image digits)
+  const w = [...text].reduce((acc, ch) => {
+    if (/\d|-/.test(ch)) return acc + digitCellWidth(fontSize, spacing);
+    return acc + punctuationWidth(fontSize, ch) + spacing * 0.35;
+  }, 0);
+  return {
+    boxW: Math.max(fontSize, Math.max(0, w - spacing * 0.2)) + pad * 2,
+    boxH: fontSize * 1.2 + pad * 2,
+  };
 }
 
 function drawSegment(
@@ -172,15 +99,19 @@ function drawSegment(
   const dx = x2 - x1;
   const dy = y2 - y1;
   const len = Math.hypot(dx, dy) || 1;
-  const nx = (-dy / len) * (thickness / 2);
-  const ny = (dx / len) * (thickness / 2);
-  const inset = thickness * 0.35;
-  const ux = (dx / len) * inset;
-  const uy = (dy / len) * inset;
+  const half = thickness / 2;
+  const nx = (-dy / len) * half;
+  const ny = (dx / len) * half;
+  // Classic LCD chamfer — matches calculator/meter segment tips
+  const tip = Math.min(half * 0.95, len * 0.28);
+  const ux = (dx / len) * tip;
+  const uy = (dy / len) * tip;
 
   ctx.beginPath();
-  ctx.moveTo(x1 + ux + nx, y1 + uy + ny);
+  ctx.moveTo(x1 + ux, y1 + uy);
+  ctx.lineTo(x1 + ux + nx, y1 + uy + ny);
   ctx.lineTo(x2 - ux + nx, y2 - uy + ny);
+  ctx.lineTo(x2 - ux, y2 - uy);
   ctx.lineTo(x2 - ux - nx, y2 - uy - ny);
   ctx.lineTo(x1 + ux - nx, y1 + uy - ny);
   ctx.closePath();
@@ -261,7 +192,7 @@ function drawSevenSegmentText(
   }
 ) {
   const digitH = fontSize;
-  const digitW = fontSize * 0.52;
+  const digitW = fontSize * 0.55;
   let x = startX;
 
   for (const ch of text) {
@@ -296,49 +227,6 @@ function drawSevenSegmentText(
       x += punctuationWidth(fontSize, ch) + spacing * 0.35;
     }
   }
-}
-
-function drawMeterLcdFontText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  settings: OverlaySettings,
-  fontSize: number,
-  spacing: number,
-  color: string,
-  softness: number,
-  opacity: number,
-  align: OverlaySettings["align"],
-  textX: number,
-  options?: { ghost?: boolean; ghostColor?: string }
-) {
-  const darkness = Math.max(0, Math.min(100, settings.digitDarkness ?? 55)) / 100;
-  ctx.save();
-  ctx.font = meterFontCss(settings, fontSize, darkness);
-  ctx.textBaseline = "middle";
-  ctx.textAlign =
-    align === "left" ? "left" : align === "right" ? "right" : "center";
-  if (spacing > 0 && "letterSpacing" in ctx) {
-    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
-      `${spacing}px`;
-  }
-
-  // Ghost inactive segments (888… under reading) — classic LCD look
-  if (options?.ghost) {
-    ctx.save();
-    ctx.globalAlpha = 0.14;
-    ctx.fillStyle = options.ghostColor || "#9aa090";
-    ctx.fillText(toGhostPattern(text), textX, 0);
-    ctx.restore();
-  }
-
-  ctx.globalAlpha = opacity;
-  ctx.fillStyle = color;
-  if (softness > 0) {
-    ctx.shadowColor = color;
-    ctx.shadowBlur = softness * 1.4;
-  }
-  ctx.fillText(text, textX, 0);
-  ctx.restore();
 }
 
 function drawSpacedText(
@@ -412,7 +300,7 @@ function resolveDigitLook(settings: OverlaySettings): {
   const baseOpacity = settings.digitOpacity ?? 0.82;
   const opacity = Math.min(1, baseOpacity + darkness * (1 - baseOpacity) * 0.85);
   const thickness = 0.9 + darkness * 0.55;
-  // Slightly less blur when darker so digits stay sharp/gadha
+  // Slightly less blur when darker so digits stay sharp/bold
   const softness = Math.max(0, (settings.softness ?? 1.2) * (1 - darkness * 0.35));
   return { color, opacity, thickness, softness };
 }
@@ -560,97 +448,33 @@ export function drawOverlay(
   if (lctx) {
     lctx.translate(padLayer + boxW / 2, padLayer + boxH / 2);
 
-    if (settings.digitStyle === "seven-segment") {
-      let textX = 0;
-      if (settings.align === "left") textX = -boxW / 2 + pad;
-      else if (settings.align === "right") textX = boxW / 2 - pad;
-
-      const fontOk =
-        typeof document !== "undefined" &&
-        document.fonts.check(`400 16px "${METER_LCD_FONT}"`);
-
-      if (fontOk) {
-        drawMeterLcdFontText(
-          lctx,
-          text,
-          settings,
-          fontSize,
-          spacing,
-          look.color,
-          look.softness,
-          look.opacity,
-          settings.align,
-          textX,
-          { ghost, ghostColor }
-        );
-      } else {
-        // Geometric fallback until font finishes loading
-        let contentW = 0;
-        for (const ch of text) {
-          if (/\d|-/.test(ch)) contentW += digitCellWidth(fontSize, spacing);
-          else contentW += punctuationWidth(fontSize, ch) + spacing * 0.35;
+    // ONLY classic 7-segment LCD (reference 1234567890) — no other fonts
+    {
+      let contentW = 0;
+      for (const ch of text) {
+        if (/\d|-/.test(ch)) contentW += digitCellWidth(fontSize, spacing);
+        else contentW += punctuationWidth(fontSize, ch) + spacing * 0.35;
+      }
+      contentW = Math.max(0, contentW - spacing * 0.2);
+      let startX = -boxW / 2 + pad;
+      if (settings.align === "center") startX = -contentW / 2;
+      else if (settings.align === "right") startX = boxW / 2 - pad - contentW;
+      drawSevenSegmentText(
+        lctx,
+        text,
+        startX,
+        0,
+        fontSize,
+        spacing,
+        look.color,
+        look.softness,
+        {
+          ghost,
+          ghostColor,
+          opacity: look.opacity,
+          thickness: look.thickness,
         }
-        contentW = Math.max(0, contentW - spacing * 0.2);
-        let startX = -boxW / 2 + pad;
-        if (settings.align === "center") startX = -contentW / 2;
-        else if (settings.align === "right") startX = boxW / 2 - pad - contentW;
-        drawSevenSegmentText(
-          lctx,
-          text,
-          startX,
-          0,
-          fontSize,
-          spacing,
-          look.color,
-          look.softness,
-          {
-            ghost,
-            ghostColor,
-            opacity: look.opacity,
-            thickness: look.thickness,
-          }
-        );
-      }
-    } else {
-      if (settings.digitStyle === "lcd") {
-        lctx.font = `${settings.fontWeight} ${fontSize}px "Courier New", "Lucida Console", monospace`;
-      } else {
-        lctx.font = `${settings.fontWeight} ${fontSize}px ui-monospace, Consolas, monospace`;
-      }
-      let textX = 0;
-      if (settings.align === "left") textX = -boxW / 2 + pad;
-      else if (settings.align === "right") textX = boxW / 2 - pad;
-
-      if (spacing > 0) {
-        drawSpacedText(
-          lctx,
-          text,
-          textX,
-          0,
-          settings.align,
-          spacing,
-          look.color,
-          look.softness,
-          look.opacity
-        );
-      } else {
-        lctx.save();
-        lctx.globalAlpha = look.opacity;
-        lctx.fillStyle = look.color;
-        lctx.textBaseline = "middle";
-        lctx.textAlign =
-          settings.align === "left"
-            ? "left"
-            : settings.align === "right"
-              ? "right"
-              : "center";
-        if (look.softness > 0) {
-          lctx.shadowColor = look.color;
-          lctx.shadowBlur = look.softness * 1.8;
-        }
-        lctx.fillText(text, textX, 0);
-        lctx.restore();
-      }
+      );
     }
 
     ctx.save();
@@ -774,7 +598,7 @@ function drawTransformHandles(
 ) {
   const hw = boxW / 2;
   const hh = boxH / 2;
-  const handle = Math.max(8, Math.min(boxW, boxH) * 0.12);
+  const handle = Math.max(12, Math.min(boxW, boxH) * 0.16);
 
   ctx.save();
   ctx.strokeStyle = "rgba(37, 99, 235, 0.95)";
@@ -831,11 +655,12 @@ export function hitTestOverlay(
   );
   const hw = geom.boxW / 2;
   const hh = geom.boxH / 2;
-  const handle = Math.max(10, Math.min(geom.boxW, geom.boxH) * 0.14);
-  const hitPad = handle * 0.85;
+  const handle = Math.max(14, Math.min(geom.boxW, geom.boxH) * 0.18);
+  // Larger hit area for fingers on mobile
+  const hitPad = Math.max(22, handle * 1.35);
 
   const rotY = -hh - handle * 2.2;
-  if (Math.hypot(local.x - 0, local.y - rotY) <= hitPad * 1.15) {
+  if (Math.hypot(local.x - 0, local.y - rotY) <= hitPad * 1.25) {
     return "rotate";
   }
 
@@ -1039,22 +864,23 @@ export function applyMeterLookPreset(
     };
   }
   if (look === "lcd-green") {
-    // Genus / PVVNL style pale LCD + charcoal digits + dust
+    // Exact reference strip: sage LCD + charcoal 7-segment digits
     return {
       ...base,
       digitStyle: "seven-segment",
       background: "custom",
-      customBackground: "#c4c7bb",
-      textColor: "#3a4038",
+      customBackground: "#a3b396",
+      textColor: "#3f4238",
       opacity: 1,
-      letterSpacing: 3,
-      softness: 1.25,
-      borderRadius: 1,
-      padding: 6,
-      digitOpacity: 0.8,
-      digitDarkness: 60,
+      letterSpacing: 1,
+      softness: 0.3,
+      borderRadius: 0,
+      padding: 4,
+      digitOpacity: 0.95,
+      digitDarkness: 75,
       ghostSegments: true,
-      dustIntensity: 0.6,
+      dustIntensity: 0.2,
+      fontWeight: "normal",
     };
   }
   return {

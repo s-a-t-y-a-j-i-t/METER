@@ -84,10 +84,10 @@ export function OCRProcessor({
         loading={running}
         fullWidth
         aria-label="Detect reading with OCR"
-        className="min-h-11"
+        className="min-h-12 touch-manipulation sm:min-h-11"
       >
         <ScanSearch className="h-4 w-4" aria-hidden="true" />
-        {running ? "Processing image..." : "Detect Reading"}
+        {running ? "Detecting..." : "Auto Detect Number"}
       </Button>
 
       {running && (

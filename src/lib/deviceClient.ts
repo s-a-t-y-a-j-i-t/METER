@@ -1,19 +1,18 @@
 /**
  * Client helpers for single-device login.
- * Prefers Admin SDK API routes; falls back to rules-enforced Firestore writes.
- * After the first 503 (Admin not configured), skips the API to avoid console noise.
+ *
+ * Default: Firestore client path (no /api calls — avoids 503 when Admin SDK
+ * is not configured).
+ *
+ * Opt-in Admin API: set NEXT_PUBLIC_USE_DEVICE_ADMIN_API=true and configure
+ * FIREBASE_ADMIN_* / FIREBASE_SERVICE_ACCOUNT_JSON on the server.
  */
 
 import { collection, getDocs } from "firebase/firestore";
 import { getDb, getFirebaseAuth } from "./firebase";
 import {
   clearStoredSessionVersion,
-  detectDeviceInfo,
   DEVICE_MISMATCH_MESSAGE,
-  getOrCreateDeviceId,
-  getStoredSessionVersion,
-  setStoredSessionVersion,
-  type ClientDeviceInfo,
   type DeviceType,
   type DeviceVerifyResponse,
 } from "./device";
@@ -27,8 +26,9 @@ import {
 export { DEVICE_MISMATCH_MESSAGE };
 export type { DeviceVerifyResponse };
 
-/** Once Admin API returns 503, stop calling it for this page lifetime. */
-let adminApiUnavailable = false;
+/** Opt-in: only hit /api/device/* when this is explicitly enabled. */
+const USE_ADMIN_API =
+  process.env.NEXT_PUBLIC_USE_DEVICE_ADMIN_API === "true";
 
 /** Single-flight: parallel verify calls for the same user share one promise. */
 const inflight = new Map<string, Promise<DeviceVerifyResponse>>();
@@ -61,7 +61,6 @@ export interface RegisteredDeviceRow {
 
 /**
  * After Firebase Auth succeeds, bind or verify this browser's device ID.
- * Pass userDocId for Firestore fallback when the Admin API is unavailable.
  */
 export async function verifyDeviceWithServer(
   options?: { checkOnly?: boolean; userDocId?: string }
@@ -80,26 +79,30 @@ export async function verifyDeviceWithServer(
 async function runVerify(
   options?: { checkOnly?: boolean; userDocId?: string }
 ): Promise<DeviceVerifyResponse> {
-  const token = await getIdToken();
-  if (!token) {
-    return { ok: false, error: "Not signed in." };
+  if (!options?.userDocId) {
+    return {
+      ok: false,
+      error: "Device verification requires a user profile id.",
+    };
   }
 
-  // Prefer Firestore fallback immediately when Admin SDK is known missing
-  if (adminApiUnavailable) {
-    if (!options?.userDocId) {
-      return {
-        ok: false,
-        error: "Device verification requires a user profile id.",
-      };
-    }
+  // Default path — no Admin API, no 503 noise
+  if (!USE_ADMIN_API) {
     return clientVerifyOrRegisterDevice(options.userDocId, {
       checkOnly: options?.checkOnly,
     });
   }
 
+  const token = await getIdToken();
+  if (!token) {
+    return { ok: false, error: "Not signed in." };
+  }
+
+  const { getOrCreateDeviceId, detectDeviceInfo, getStoredSessionVersion, setStoredSessionVersion } =
+    await import("./device");
+
   const deviceId = getOrCreateDeviceId();
-  const info: ClientDeviceInfo = detectDeviceInfo();
+  const info = detectDeviceInfo();
   const sessionVersion = getStoredSessionVersion();
 
   try {
@@ -117,15 +120,8 @@ async function runVerify(
       }),
     });
 
-    if (res.status === 503 || res.status === 500) {
-      adminApiUnavailable = true;
-      if (!options?.userDocId) {
-        return {
-          ok: false,
-          error:
-            "Device API unavailable. Using client fallback requires a user id.",
-        };
-      }
+    if (!res.ok) {
+      // Fall back to Firestore if Admin API fails
       return clientVerifyOrRegisterDevice(options.userDocId, {
         checkOnly: options?.checkOnly,
       });
@@ -137,16 +133,9 @@ async function runVerify(
     }
     return data;
   } catch {
-    if (options?.userDocId) {
-      adminApiUnavailable = true;
-      return clientVerifyOrRegisterDevice(options.userDocId, {
-        checkOnly: options?.checkOnly,
-      });
-    }
-    return {
-      ok: false,
-      error: "Unable to verify device. Please try again.",
-    };
+    return clientVerifyOrRegisterDevice(options.userDocId, {
+      checkOnly: options?.checkOnly,
+    });
   }
 }
 
@@ -155,26 +144,23 @@ export async function fetchRegisteredDevices(): Promise<{
   devices?: RegisteredDeviceRow[];
   error?: string;
 }> {
-  const token = await getIdToken();
-  if (!token) return { ok: false, error: "Not signed in." };
-
-  if (!adminApiUnavailable) {
-    try {
-      const res = await fetch("/api/admin/devices", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        return (await res.json()) as {
-          ok: boolean;
-          devices?: RegisteredDeviceRow[];
-          error?: string;
-        };
+  if (USE_ADMIN_API) {
+    const token = await getIdToken();
+    if (token) {
+      try {
+        const res = await fetch("/api/admin/devices", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          return (await res.json()) as {
+            ok: boolean;
+            devices?: RegisteredDeviceRow[];
+            error?: string;
+          };
+        }
+      } catch {
+        /* fall through */
       }
-      if (res.status === 503 || res.status === 500) {
-        adminApiUnavailable = true;
-      }
-    } catch {
-      adminApiUnavailable = true;
     }
   }
 
@@ -214,28 +200,28 @@ export async function adminDeviceAction(
   userId: string,
   action: "reset" | "remove" | "force-logout" | "block"
 ): Promise<{ ok: boolean; error?: string }> {
-  const token = await getIdToken();
-  if (!token) return { ok: false, error: "Not signed in." };
-
-  if (!adminApiUnavailable) {
-    try {
-      const res = await fetch(
-        `/api/admin/devices/${encodeURIComponent(userId)}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ action }),
+  if (USE_ADMIN_API) {
+    const token = await getIdToken();
+    if (token) {
+      try {
+        const res = await fetch(
+          `/api/admin/devices/${encodeURIComponent(userId)}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ action }),
+          }
+        );
+        if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 404)) {
+          const data = (await res.json()) as { ok: boolean; error?: string };
+          if (res.ok || data.error) return data;
         }
-      );
-      if (res.status !== 503 && res.status !== 500) {
-        return (await res.json()) as { ok: boolean; error?: string };
+      } catch {
+        /* fall through */
       }
-      adminApiUnavailable = true;
-    } catch {
-      adminApiUnavailable = true;
     }
   }
 

@@ -14,7 +14,6 @@ import {
   drawOverlay,
   getOverlayGeometry,
   hitTestOverlay,
-  ensureMeterFontLoaded,
   OverlayHitTarget,
 } from "@/lib/meterOverlay";
 import { Button } from "@/components/common/Button";
@@ -74,21 +73,10 @@ export function MeterCanvas({
   const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [fontReady, setFontReady] = useState(false);
 
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void ensureMeterFontLoaded().then(() => {
-      if (!cancelled) setFontReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const draw = useCallback(() => {
     const canvas = displayCanvasRef.current;
@@ -110,7 +98,7 @@ export function MeterCanvas({
         showHandles: true,
       });
     }
-  }, [settings, showOverlay, adjustments, fontReady]);
+  }, [settings, showOverlay, adjustments]);
 
   useEffect(() => {
     setReady(false);
@@ -329,9 +317,9 @@ export function MeterCanvas({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2 sm:space-y-3">
       <div
-        className="flex flex-wrap items-center gap-2"
+        className="flex items-center gap-1.5 sm:flex-wrap sm:gap-2"
         role="toolbar"
         aria-label="Zoom controls"
       >
@@ -341,14 +329,12 @@ export function MeterCanvas({
           size="sm"
           onClick={zoomOut}
           aria-label="Zoom out"
-          title="Zoom out"
-          className="min-h-11 min-w-11"
+          className="min-h-11 min-w-11 touch-manipulation"
         >
           <Minus className="h-4 w-4" aria-hidden="true" />
-          <span className="hidden sm:inline">Zoom −</span>
         </Button>
         <span
-          className="min-w-[3.5rem] text-center text-sm font-semibold tabular-nums text-text"
+          className="min-w-[3rem] text-center text-sm font-semibold tabular-nums text-text"
           aria-live="polite"
         >
           {Math.round(zoom * 100)}%
@@ -359,11 +345,9 @@ export function MeterCanvas({
           size="sm"
           onClick={zoomIn}
           aria-label="Zoom in"
-          title="Zoom in"
-          className="min-h-11 min-w-11"
+          className="min-h-11 min-w-11 touch-manipulation"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
-          <span className="hidden sm:inline">Zoom +</span>
         </Button>
         <Button
           type="button"
@@ -371,38 +355,30 @@ export function MeterCanvas({
           size="sm"
           onClick={fitZoom}
           aria-label="Fit image to view"
-          title="Fit"
-          className="min-h-11"
+          className="min-h-11 touch-manipulation px-3"
         >
           <Maximize2 className="h-4 w-4" />
-          Fit
+          <span className="ml-1">Fit</span>
         </Button>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={resetZoom}
           aria-label="Reset zoom"
-          title="Reset zoom"
-          className="min-h-11"
+          className="hidden min-h-11 touch-manipulation sm:inline-flex"
         >
           <RotateCcw className="h-4 w-4" />
-          Reset
         </Button>
-        {naturalSize.w > 0 && (
-          <span className="text-xs text-muted" title="Original image resolution">
-            {naturalSize.w}×{naturalSize.h}
-          </span>
-        )}
       </div>
 
       <div
         ref={viewportRef}
-        className="overflow-auto rounded-[var(--radius-card)] border border-border bg-bg-muted"
-        style={{ maxHeight: "min(70vh, 680px)" }}
+        className="overflow-auto rounded-[var(--radius-card)] border border-border bg-bg-muted overscroll-contain"
+        style={{ maxHeight: "min(58vh, 560px)" }}
       >
         <div
-          className="flex min-h-[200px] items-center justify-center p-2 sm:p-4"
+          className="flex min-h-[180px] items-center justify-center p-1.5 sm:min-h-[200px] sm:p-4"
           style={{
             width: zoom > 1 ? `${zoom * 100}%` : "100%",
             minWidth: zoom > 1 ? `${zoom * 100}%` : undefined,
@@ -416,7 +392,7 @@ export function MeterCanvas({
           <canvas
             ref={displayCanvasRef}
             className={cn(
-              "max-w-full rounded-lg bg-surface shadow-sm",
+              "max-w-full rounded-lg bg-surface shadow-sm touch-none",
               !ready && "hidden"
             )}
             style={{
@@ -435,13 +411,12 @@ export function MeterCanvas({
         </div>
       </div>
       {showOverlay && (
-        <p className="text-xs text-muted">
-          <span className="font-medium text-text-secondary">Move:</span> drag
-          the box ·{" "}
-          <span className="font-medium text-text-secondary">Resize:</span>{" "}
-          corner handles ·{" "}
-          <span className="font-medium text-text-secondary">Rotate:</span> top
-          circle. Cover the original digits for a seamless look.
+        <p className="rounded-xl bg-primary-light/60 px-3 py-2 text-xs leading-relaxed text-text-secondary sm:bg-transparent sm:px-0 sm:py-0">
+          <span className="font-semibold text-primary sm:text-text-secondary">
+            Tip:
+          </span>{" "}
+          Drag the number to move · corner boxes to resize · top circle to
+          rotate
         </p>
       )}
     </div>
@@ -460,34 +435,27 @@ export function renderFinalCanvas(
   adjustments: ImageAdjustments = DEFAULT_IMAGE_ADJUSTMENTS
 ): Promise<HTMLCanvasElement> {
   return new Promise((resolve, reject) => {
-    void (async () => {
+    const img = new Image();
+    img.onload = () => {
       try {
-        await ensureMeterFontLoaded();
-        const img = new Image();
-        img.onload = () => {
-          try {
-            const canvas = document.createElement("canvas");
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            const ctx = canvas.getContext("2d");
-            if (!ctx) {
-              reject(new Error("Canvas unavailable"));
-              return;
-            }
-            drawAdjustedImage(ctx, img, canvas.width, canvas.height, adjustments);
-            if (showOverlay && settings.text.trim()) {
-              drawOverlay(ctx, canvas.width, canvas.height, settings);
-            }
-            resolve(canvas);
-          } catch (err) {
-            reject(err instanceof Error ? err : new Error("Render failed"));
-          }
-        };
-        img.onerror = () => reject(new Error("Image load failed"));
-        img.src = imageUrl;
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas unavailable"));
+          return;
+        }
+        drawAdjustedImage(ctx, img, canvas.width, canvas.height, adjustments);
+        if (showOverlay && settings.text.trim()) {
+          drawOverlay(ctx, canvas.width, canvas.height, settings);
+        }
+        resolve(canvas);
       } catch (err) {
-        reject(err instanceof Error ? err : new Error("Font load failed"));
+        reject(err instanceof Error ? err : new Error("Render failed"));
       }
-    })();
+    };
+    img.onerror = () => reject(new Error("Image load failed"));
+    img.src = imageUrl;
   });
 }

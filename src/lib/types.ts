@@ -125,26 +125,26 @@ export const DEFAULT_IMAGE_ADJUSTMENTS: ImageAdjustments = {
 export const DEFAULT_OVERLAY: OverlaySettings = {
   text: "",
   fontSize: 34,
-  fontWeight: "bold",
-  // Real Genus/static kWh meters: dark charcoal digits on pale LCD
-  textColor: "#3a4038",
+  fontWeight: "normal",
+  // Exact reference LCD strip look (1234567890)
+  textColor: "#3f4238",
   background: "custom",
-  customBackground: "#c4c7bb",
+  customBackground: "#a3b396",
   opacity: 1,
-  borderRadius: 1,
-  padding: 6,
+  borderRadius: 0,
+  padding: 4,
   x: 50,
   y: 50,
   align: "center",
   digitStyle: "seven-segment",
-  letterSpacing: 3,
-  softness: 1.2,
+  letterSpacing: 1,
+  softness: 0.3,
   rotation: 0,
   skewX: 0,
-  digitOpacity: 0.82,
-  digitDarkness: 55,
+  digitOpacity: 0.95,
+  digitDarkness: 75,
   ghostSegments: true,
-  dustIntensity: 0.55,
+  dustIntensity: 0.2,
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {

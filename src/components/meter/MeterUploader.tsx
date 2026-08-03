@@ -76,52 +76,52 @@ export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
         void handleFile(e.dataTransfer.files?.[0]);
       }}
       className={cn(
-        "flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-12 text-center transition sm:py-16",
+        "flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-10 text-center transition sm:px-6 sm:py-16",
         dragging
           ? "border-primary bg-primary-light"
           : "border-border bg-surface hover:border-primary/50 hover:bg-bg-muted",
         busy && "pointer-events-none opacity-60"
       )}
     >
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-light text-primary">
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-light text-primary sm:h-14 sm:w-14">
         {dragging ? (
-          <ImageIcon className="h-7 w-7" aria-hidden="true" />
+          <ImageIcon className="h-8 w-8 sm:h-7 sm:w-7" aria-hidden="true" />
         ) : (
-          <Upload className="h-7 w-7" aria-hidden="true" />
+          <Camera className="h-8 w-8 sm:hidden" aria-hidden="true" />
+        )}
+        {!dragging && (
+          <Upload className="hidden h-7 w-7 sm:block" aria-hidden="true" />
         )}
       </div>
-      <h3 className="text-section-title">Upload Meter Image</h3>
-      <p className="mt-2 max-w-sm text-body">
+      <h3 className="text-section-title">Meter Photo</h3>
+      <p className="mt-2 max-w-sm text-body px-1">
         {checking
-          ? "Processing image..."
-          : "Drag & drop, browse files, or take a photo of the meter"}
+          ? "Loading photo..."
+          : "Take a photo with your phone or choose from gallery"}
       </p>
-      <p className="my-3 text-caption font-medium uppercase tracking-wide">
-        or
-      </p>
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => inputRef.current?.click()}
-          className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-white transition hover:opacity-95"
-        >
-          <Upload className="h-4 w-4" aria-hidden="true" />
-          Browse Files
-        </button>
+
+      {/* Mobile: Camera first, big buttons stacked */}
+      <div className="mt-6 flex w-full max-w-sm flex-col gap-3 sm:mt-4 sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-center">
         <button
           type="button"
           disabled={busy}
           onClick={() => cameraRef.current?.click()}
-          className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-medium text-fg transition hover:border-primary/50 hover:bg-bg-muted"
+          className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-base font-semibold text-white shadow-sm transition hover:opacity-95 active:scale-[0.98] sm:h-11 sm:w-auto sm:rounded-xl sm:text-sm sm:font-medium sm:order-2"
         >
-          <Camera className="h-4 w-4" aria-hidden="true" />
+          <Camera className="h-5 w-5" aria-hidden="true" />
           Take Photo
         </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+          className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl border-2 border-border bg-surface px-5 text-base font-semibold text-text transition hover:border-primary/50 hover:bg-bg-muted active:scale-[0.98] sm:h-11 sm:w-auto sm:rounded-xl sm:border sm:text-sm sm:font-medium sm:order-1"
+        >
+          <Upload className="h-5 w-5" aria-hidden="true" />
+          Gallery / Files
+        </button>
       </div>
-      <p className="mt-4 text-xs text-muted">
-        JPG, JPEG, PNG, WEBP · Max 10 MB
-      </p>
+      <p className="mt-4 text-xs text-muted">JPG, PNG, WEBP · Max 10 MB</p>
       <input
         ref={inputRef}
         type="file"

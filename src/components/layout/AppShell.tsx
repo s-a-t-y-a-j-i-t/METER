@@ -26,7 +26,7 @@ export function AppShell({
         <Sidebar open={mobileOpen} onClose={() => setMobileOpen(false)} />
         <div className="lg:pl-64">
           <Header title={title} onMenuClick={() => setMobileOpen(true)} />
-          <main className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+          <main className="mx-auto w-full max-w-7xl px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
             <ErrorBoundary>{children}</ErrorBoundary>
           </main>
         </div>
