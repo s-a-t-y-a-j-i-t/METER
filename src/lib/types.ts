@@ -142,7 +142,7 @@ export const DEFAULT_OVERLAY: OverlaySettings = {
   rotation: 0,
   skewX: 0,
   digitOpacity: 0.95,
-  digitDarkness: 75,
+  digitDarkness: 55,
   ghostSegments: true,
   dustIntensity: 0.2,
 };

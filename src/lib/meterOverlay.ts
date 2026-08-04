@@ -192,7 +192,7 @@ function drawSevenSegmentDigit(
   const mask = SEGMENTS[digit];
   if (mask == null) return;
 
-  const thick = Math.max(0.85, Math.min(1.55, options?.thickness ?? 1));
+  const thick = Math.max(0.65, Math.min(1.55, options?.thickness ?? 1));
   const t = Math.max(1.6, Math.min(w, h) * 0.13 * thick);
   const inset = t * 0.5;
   const left = x + inset;
@@ -295,7 +295,7 @@ function drawMeterLcdFontText(
   opacity: number,
   align: OverlaySettings["align"],
   textX: number,
-  options?: { ghost?: boolean; ghostColor?: string }
+  options?: { ghost?: boolean; ghostColor?: string; thickness?: number }
 ) {
   ctx.save();
   ctx.font = meterFontCss(settings, fontSize);
@@ -322,6 +322,16 @@ function drawMeterLcdFontText(
     ctx.shadowBlur = softness * 1.4;
   }
   ctx.fillText(text, textX, 0);
+
+  // Fake bold via stroke so Darkness → Bold is visible on DS-Digital fill text
+  const thick = options?.thickness ?? 1;
+  if (thick > 1.05) {
+    ctx.lineWidth = (thick - 1) * fontSize * 0.04;
+    ctx.strokeStyle = color;
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.strokeText(text, textX, 0);
+  }
   ctx.restore();
 }
 
@@ -390,14 +400,27 @@ function resolveDigitLook(settings: OverlaySettings): {
   thickness: number;
   softness: number;
 } {
-  const darkness = Math.max(0, Math.min(100, settings.digitDarkness ?? 55)) / 100;
-  // Push ink toward near-black as darkness increases
-  const color = mixHex(settings.textColor, "#0c0e0b", darkness * 0.75);
-  const baseOpacity = settings.digitOpacity ?? 0.82;
-  const opacity = Math.min(1, baseOpacity + darkness * (1 - baseOpacity) * 0.85);
-  const thickness = 0.9 + darkness * 0.55;
-  // Slightly less blur when darker so digits stay sharp/bold
-  const softness = Math.max(0, (settings.softness ?? 1.2) * (1 - darkness * 0.35));
+  const t = Math.max(0, Math.min(100, settings.digitDarkness ?? 55)) / 100;
+  const base = settings.textColor || "#3f4238";
+
+  // Light (0): washed LCD ink · Medium (0.5): matched color · Bold (1): near-black
+  // Old formula only darkened an already-dark textColor, so Medium≈Bold visually.
+  let color: string;
+  if (t <= 0.5) {
+    const lightInk = mixHex(base, "#b0b8a4", 0.72);
+    color = mixHex(lightInk, base, t / 0.5);
+  } else {
+    color = mixHex(base, "#050605", (t - 0.5) / 0.5);
+  }
+
+  // Opacity: Light ~0.42 → Medium ~0.72 → Bold ~ceiling (clear, visible range)
+  const ceiling = Math.min(1, Math.max(0.75, settings.digitOpacity ?? 0.9));
+  const opacity = 0.42 + t * (ceiling - 0.42);
+
+  // Stroke weight for geometric digits / font fake-bold
+  const thickness = 0.7 + t * 0.85;
+  // Washed blur when light; sharper when bold
+  const softness = Math.max(0, (settings.softness ?? 1.2) * (1.2 - t * 0.7));
   return { color, opacity, thickness, softness };
 }
 
@@ -565,7 +588,7 @@ export function drawOverlay(
           look.opacity,
           settings.align,
           textX,
-          { ghost, ghostColor }
+          { ghost, ghostColor, thickness: look.thickness }
         );
       } else {
         let contentW = 0;
