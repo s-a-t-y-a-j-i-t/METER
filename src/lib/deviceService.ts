@@ -431,8 +431,33 @@ export async function requireAdminFromToken(authHeader: string | null) {
   const decoded = await verifyIdToken(authHeader);
   if (!decoded) return { ok: false as const, error: "Unauthorized." };
   const user = await findUserByUid(decoded.uid);
-  if (!user || user.role !== "admin") {
+  if (!user || user.role !== "admin" || user.status !== "active") {
     return { ok: false as const, error: "Admin access required." };
   }
   return { ok: true as const, user, decoded };
+}
+
+/** Set a user's Auth password. Used because sign-in emails are not real inboxes. */
+export async function setUserPassword(
+  userId: string,
+  password: string
+): Promise<{ ok: boolean; error?: string }> {
+  const id = userId.trim().toLowerCase();
+  if (!id) return { ok: false, error: "User ID is required." };
+  if (!password || password.length < 6) {
+    return { ok: false, error: "Password must be at least 6 characters." };
+  }
+  if (password.length > 128) {
+    return { ok: false, error: "Password is too long." };
+  }
+
+  const snap = await getAdminDb().collection(USERS_COLLECTION).doc(id).get();
+  if (!snap.exists) return { ok: false, error: "User not found." };
+  const uid = snap.data()?.uid;
+  if (typeof uid !== "string" || !uid) {
+    return { ok: false, error: "This user has no sign-in account." };
+  }
+
+  await getAdminAuth().updateUser(uid, { password });
+  return { ok: true };
 }

@@ -97,7 +97,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
                   <p className="truncate text-sm font-semibold text-text">
                     {user?.name}
                   </p>
-                  <p className="truncate text-xs text-muted">{user?.email}</p>
+                  <p className="truncate text-xs text-muted">{user?.id}</p>
                 </div>
                 <Link
                   href={profileHref}
@@ -111,8 +111,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
                   type="button"
                   onClick={() => {
                     setMenuOpen(false);
-                    logout();
-                    router.replace("/login");
+                    void logout().then(() => router.replace("/login"));
                   }}
                   className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-danger hover:bg-danger-bg"
                 >

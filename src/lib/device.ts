@@ -60,22 +60,42 @@ export function getOrCreateDeviceId(): string {
   }
 }
 
-export function getStoredSessionVersion(): number | null {
-  if (typeof window === "undefined") return null;
+function versionKey(userId: string): string {
+  return `${SESSION_VERSION_KEY}:${userId.trim().toLowerCase()}`;
+}
+
+function parseVersion(raw: string | null): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Session version is shared across tabs (localStorage), keyed by user.
+ * A new tab used to miss force-logout because the old value lived in sessionStorage.
+ */
+export function getStoredSessionVersion(userId: string): number | null {
+  if (typeof window === "undefined" || !userId) return null;
   try {
-    const raw = sessionStorage.getItem(SESSION_VERSION_KEY);
-    if (raw == null) return null;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
+    const key = versionKey(userId);
+    const stored = parseVersion(localStorage.getItem(key));
+    if (stored != null) return stored;
+    const legacy = parseVersion(sessionStorage.getItem(SESSION_VERSION_KEY));
+    if (legacy != null) {
+      localStorage.setItem(key, String(legacy));
+      return legacy;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-export function setStoredSessionVersion(version: number): void {
-  if (typeof window === "undefined") return;
+export function setStoredSessionVersion(userId: string, version: number): void {
+  if (typeof window === "undefined" || !userId) return;
   try {
-    sessionStorage.setItem(SESSION_VERSION_KEY, String(version));
+    localStorage.setItem(versionKey(userId), String(version));
+    sessionStorage.removeItem(SESSION_VERSION_KEY);
   } catch {
     /* ignore */
   }
@@ -85,6 +105,15 @@ export function clearStoredSessionVersion(): void {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.removeItem(SESSION_VERSION_KEY);
+    const prefix = `${SESSION_VERSION_KEY}:`;
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key === SESSION_VERSION_KEY || (key && key.startsWith(prefix))) {
+        keys.push(key);
+      }
+    }
+    keys.forEach((key) => localStorage.removeItem(key));
   } catch {
     /* ignore */
   }

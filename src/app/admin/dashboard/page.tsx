@@ -25,7 +25,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getActivityLogs, getHistory, getAllStats } from "@/lib/storage";
 import { getFirebaseUsers } from "@/lib/firebaseAuth";
 import { ActivityLog, ACTIVITY_ACTION_LABELS } from "@/lib/types";
-import { formatDisplayDateTime } from "@/lib/utils";
+import { formatDisplayDateTime, isSameLocalDay, localDateKey } from "@/lib/utils";
 import { APP_NAME, APP_VERSION, greetingForHour } from "@/lib/branding";
 
 export default function AdminDashboardPage() {
@@ -52,7 +52,7 @@ export default function AdminDashboardPage() {
         const users = await getFirebaseUsers();
         const history = getHistory();
         const allStats = getAllStats();
-        const today = new Date().toISOString().slice(0, 10);
+        const today = localDateKey();
         const month = today.slice(0, 7);
 
         if (cancelled) return;
@@ -61,7 +61,7 @@ export default function AdminDashboardPage() {
           activeUsers: users.filter((u) => u.status === "active").length,
           inactiveUsers: users.filter((u) => u.status === "inactive").length,
           totalSessions: history.length,
-          todaySessions: history.filter((h) => h.date.startsWith(today)).length,
+          todaySessions: history.filter((h) => isSameLocalDay(h.date, today)).length,
           totalDownloads: Object.values(allStats).reduce(
             (sum, s) => sum + (s.downloadedImages || 0),
             0

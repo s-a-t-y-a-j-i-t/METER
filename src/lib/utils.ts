@@ -212,6 +212,18 @@ export function downloadCanvas(
   document.body.removeChild(link);
 }
 
+/** Local calendar day as YYYY-MM-DD. Stats and filters use this, not UTC. */
+export function localDateKey(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export function isSameLocalDay(iso: string, day = localDateKey()): boolean {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso.startsWith(day);
+  return localDateKey(parsed) === day;
+}
+
 export function formatDisplayDate(iso: string): string {
   try {
     const d = new Date(iso);

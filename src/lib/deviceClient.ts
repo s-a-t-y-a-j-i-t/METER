@@ -57,6 +57,7 @@ export interface RegisteredDeviceRow {
     status: "active" | "unregistered" | "blocked";
   };
   sessionVersion: number;
+  contactEmail?: string;
 }
 
 /**
@@ -103,7 +104,7 @@ async function runVerify(
 
   const deviceId = getOrCreateDeviceId();
   const info = detectDeviceInfo();
-  const sessionVersion = getStoredSessionVersion();
+  const sessionVersion = getStoredSessionVersion(options.userDocId);
 
   try {
     const res = await fetch("/api/device/verify", {
@@ -129,7 +130,7 @@ async function runVerify(
 
     const data = (await res.json()) as DeviceVerifyResponse;
     if (data.ok) {
-      setStoredSessionVersion(data.sessionVersion);
+      setStoredSessionVersion(options.userDocId, data.sessionVersion);
     }
     return data;
   } catch {
@@ -177,6 +178,8 @@ export async function fetchRegisteredDevices(): Promise<{
         role: String(data.role || "user"),
         status: String(data.status || "active"),
         createdAt: String(data.createdAt || ""),
+        contactEmail:
+          typeof data.contactEmail === "string" ? data.contactEmail : "",
         device: {
           deviceId: raw?.deviceId ?? null,
           firstLoginAt: raw?.firstLoginAt ?? null,

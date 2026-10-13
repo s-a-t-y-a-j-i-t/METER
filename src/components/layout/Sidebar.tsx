@@ -129,9 +129,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         <button
           type="button"
           onClick={() => {
-            logout();
             onClose();
-            router.replace("/login");
+            void logout().then(() => router.replace("/login"));
           }}
           className="flex min-h-11 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 py-2.5 text-sm font-medium text-text-secondary transition-colors hover:bg-danger-bg hover:text-danger"
         >

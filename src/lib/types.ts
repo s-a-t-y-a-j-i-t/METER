@@ -34,6 +34,10 @@ export interface AppUser {
   /** Real contact address. `email` stays the Firebase Auth address used for User ID login. */
   contactEmail?: string;
   signupSource?: SignupSource;
+  /** Set when an admin activates this ID. ISO datetime. */
+  activatedAt?: string;
+  /** Access ends one calendar month after activation. ISO datetime. */
+  accessExpiresAt?: string;
 }
 
 export interface SignupPaymentConfig {

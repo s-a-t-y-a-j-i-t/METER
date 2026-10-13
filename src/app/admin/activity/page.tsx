@@ -12,7 +12,7 @@ import {
   ActivityLog,
   ACTIVITY_ACTION_LABELS,
 } from "@/lib/types";
-import { formatDisplayDateTime, cn } from "@/lib/utils";
+import { formatDisplayDateTime, cn, isSameLocalDay } from "@/lib/utils";
 
 const PAGE_SIZE = 10;
 
@@ -27,6 +27,7 @@ const ACTION_FILTERS: { value: "all" | ActivityAction; label: string }[] = [
   { value: "PASSWORD_RESET", label: "Password Reset" },
   { value: "USER_ACTIVATED", label: "Activated" },
   { value: "USER_DEACTIVATED", label: "Deactivated" },
+  { value: "USER_DELETED", label: "User Deleted" },
 ];
 
 export default function AdminActivityPage() {
@@ -54,7 +55,7 @@ export default function AdminActivityPage() {
     return items.filter((item) => {
       if (action !== "all" && item.action !== action) return false;
       if (userId !== "all" && item.userId !== userId) return false;
-      if (date && !item.timestamp.startsWith(date)) return false;
+      if (date && !isSameLocalDay(item.timestamp, date)) return false;
       if (!q) return true;
       return (
         item.userName.toLowerCase().includes(q) ||

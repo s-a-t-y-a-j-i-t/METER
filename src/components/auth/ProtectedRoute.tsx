@@ -43,6 +43,15 @@ export function ProtectedRoute({
   const userId = user?.id;
   const userRole = user?.role;
   const passedOnce = useRef(false);
+  const [focusTick, setFocusTick] = useState(0);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") setFocusTick((n) => n + 1);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +128,7 @@ export function ProtectedRoute({
     router,
     refreshUser,
     reverifyDevice,
+    focusTick,
   ]);
 
   if (isLoading || checking) {

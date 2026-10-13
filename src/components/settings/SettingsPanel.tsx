@@ -83,9 +83,10 @@ export function SettingsPanel({ variant = "user" }: { variant?: "user" | "admin"
   const handleReset = () => {
     resetApplication();
     setResetOpen(false);
-    logout();
-    toast("Application reset to defaults.", "success");
-    router.replace("/login");
+    void logout().then(() => {
+      toast("Application reset to defaults.", "success");
+      router.replace("/login");
+    });
   };
 
   return (

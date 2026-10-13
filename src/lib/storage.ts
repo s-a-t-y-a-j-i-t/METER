@@ -12,7 +12,7 @@ import {
   STORAGE_KEYS,
   UserStats,
 } from "./types";
-import { generateId } from "./utils";
+import { generateId, localDateKey } from "./utils";
 
 const LEGACY_KEYS = ["app_users", "auth_user"] as const;
 
@@ -174,7 +174,7 @@ export function getAllStats(): Record<string, UserStats> {
 
 export function getUserStats(userId: string): UserStats {
   const all = getAllStats();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   const stats = all[userId] ?? {
     totalProcessed: 0,
     todayProcessed: 0,
@@ -194,9 +194,10 @@ export function updateUserStats(
   updater: (prev: UserStats) => UserStats
 ): void {
   const all = getAllStats();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   const prev = getUserStats(userId);
-  all[userId] = updater({ ...prev, lastProcessedDate: today });
+  const next = updater({ ...prev, lastProcessedDate: today });
+  all[userId] = { ...next, lastProcessedDate: today };
   writeJSON(STORAGE_KEYS.STATS, all);
 }
 

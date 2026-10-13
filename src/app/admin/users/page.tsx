@@ -15,10 +15,11 @@ import {
   createFirebaseUser,
   deleteFirebaseUser,
   getFirebaseUsers,
-  sendFirebasePasswordReset,
+  adminSetUserPassword,
   updateFirebaseUser,
 } from "@/lib/firebaseAuth";
 import { AppUser } from "@/lib/types";
+import { isAccessDue } from "@/lib/access";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/utils";
 
 function UsersPageContent() {
@@ -32,6 +33,8 @@ function UsersPageContent() {
   const [deleting, setDeleting] = useState<AppUser | null>(null);
   const [toggling, setToggling] = useState<AppUser | null>(null);
   const [resetting, setResetting] = useState<AppUser | null>(null);
+  const [nextPassword, setNextPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [listLoading, setListLoading] = useState(true);
 
@@ -100,7 +103,12 @@ function UsersPageContent() {
         action: "USER_CREATED",
         description: `Created user ${values.name.trim()} (${values.id.trim()})`,
       });
-      toast("User created successfully.", "success");
+      toast(
+        result.accessExpiresAt
+          ? `User created. Access is active until ${formatDisplayDate(result.accessExpiresAt)}.`
+          : "User created successfully.",
+        "success"
+      );
     } else if (editing) {
       const updates: Partial<AppUser> = {
         name: values.name.trim(),
@@ -163,30 +171,48 @@ function UsersPageContent() {
       action: next === "active" ? "USER_ACTIVATED" : "USER_DEACTIVATED",
       description: `${next === "active" ? "Activated" : "Deactivated"} user ${toggling.name}`,
     });
-    toast(`User ${next === "active" ? "activated" : "deactivated"}.`, "success");
+    toast(
+      next === "active"
+        ? result.accessExpiresAt
+          ? `User activated until ${formatDisplayDate(result.accessExpiresAt)}. They can sign in for 1 month.`
+          : "User activated."
+        : "User deactivated. They will see the payment option on login.",
+      "success"
+    );
     setToggling(null);
     await refresh();
   };
 
+  const closeReset = () => {
+    setResetting(null);
+    setNextPassword("");
+    setConfirmPassword("");
+  };
+
   const handleResetPassword = async () => {
-    if (!resetting?.email) {
-      toast("This user has no email address.", "error");
+    if (!resetting) return;
+    if (nextPassword.length < 6) {
+      toast("Password must be at least 6 characters.", "error");
+      return;
+    }
+    if (nextPassword !== confirmPassword) {
+      toast("Passwords do not match.", "error");
       return;
     }
     setLoading(true);
-    const result = await sendFirebasePasswordReset(resetting.email);
+    const result = await adminSetUserPassword(resetting.id, nextPassword);
     setLoading(false);
     if (!result.ok) {
-      toast(result.error || "Unable to send reset email.", "error");
+      toast(result.error || "Unable to set password.", "error");
       return;
     }
     logActivity({
       ...actor(),
       action: "PASSWORD_RESET",
-      description: `Sent password reset email to ${resetting.name}`,
+      description: `Set a new password for ${resetting.name}`,
     });
-    toast("Password reset email sent.", "success");
-    setResetting(null);
+    toast("Password updated. Tell the user their new password.", "success");
+    closeReset();
   };
 
   const viewStats = viewing ? getUserDetailStats(viewing.id) : null;
@@ -248,9 +274,23 @@ function UsersPageContent() {
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <Detail label="Full Name" value={viewing.name} />
             <Detail label="User ID" value={viewing.id} />
-            <Detail label="Email" value={viewing.email || "—"} />
+            <Detail label="Email" value={viewing.contactEmail || "—"} />
             <Detail label="Role" value={viewing.role} />
             <Detail label="Status" value={viewing.status} />
+            <Detail
+              label="Access until"
+              value={
+                viewing.role === "admin"
+                  ? "—"
+                  : viewing.accessExpiresAt
+                    ? `${formatDisplayDate(viewing.accessExpiresAt)}${
+                        isAccessDue(viewing) ? " (finished)" : ""
+                      }`
+                    : viewing.status === "active"
+                      ? "Not set"
+                      : "—"
+              }
+            />
             <Detail
               label="Created Date"
               value={formatDisplayDate(viewing.createdAt)}
@@ -277,15 +317,15 @@ function UsersPageContent() {
 
       <Modal
         open={!!resetting}
-        onClose={() => setResetting(null)}
-        title="Reset Password"
+        onClose={closeReset}
+        title="Set Password"
         size="sm"
         footer={
           <>
             <Button
               variant="outline"
               className="min-h-11"
-              onClick={() => setResetting(null)}
+              onClick={closeReset}
             >
               Cancel
             </Button>
@@ -294,16 +334,51 @@ function UsersPageContent() {
               className="min-h-11"
               loading={loading}
             >
-              Send Reset Email
+              Save Password
             </Button>
           </>
         }
       >
         <p className="text-sm text-muted">
-          Send a Firebase password reset email to{" "}
+          Set a new password for{" "}
           <strong className="text-text">{resetting?.name}</strong> (
-          {resetting?.email})?
+          {resetting?.id}). Share it with them directly. Sign-in uses the User
+          ID, so a reset email would not reach them.
         </p>
+        <div className="mt-4 space-y-3">
+          <div>
+            <label
+              htmlFor="new-password"
+              className="mb-1.5 block text-sm font-medium text-text-secondary"
+            >
+              New password
+            </label>
+            <input
+              id="new-password"
+              type="password"
+              autoComplete="new-password"
+              value={nextPassword}
+              onChange={(e) => setNextPassword(e.target.value)}
+              className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="confirm-password"
+              className="mb-1.5 block text-sm font-medium text-text-secondary"
+            >
+              Confirm password
+            </label>
+            <input
+              id="confirm-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+        </div>
       </Modal>
 
       <ConfirmDialog
@@ -315,8 +390,8 @@ function UsersPageContent() {
         }
         message={
           toggling?.status === "active"
-            ? "This user will no longer be able to log in."
-            : "Activate after confirming payment. This user will be allowed to log in."
+            ? "This user will be signed out and will see the payment option. After they pay, activate the ID again."
+            : "Activate after confirming payment. This starts 1 month of access. After that month you will get a popup to deactivate this ID."
         }
         confirmLabel={
           toggling?.status === "active" ? "Deactivate" : "Activate"

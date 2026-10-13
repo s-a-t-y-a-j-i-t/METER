@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { Button } from "@/components/common/Button";
 import { BrandMark } from "@/components/common/BrandMark";
+import { PaymentPanel } from "@/components/auth/PaymentPanel";
 import { APP_NAME, APP_TAGLINE } from "@/lib/branding";
 
 export function LoginForm() {
@@ -21,6 +22,7 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [renewalUserId, setRenewalUserId] = useState("");
   const [showForgot, setShowForgot] = useState(false);
   const submittingRef = useRef(false);
 
@@ -28,6 +30,7 @@ export function LoginForm() {
     e.preventDefault();
     if (submittingRef.current || loading) return;
     setError("");
+    setRenewalUserId("");
 
     const form = e.currentTarget;
     const fd = new FormData(form);
@@ -50,6 +53,9 @@ export function LoginForm() {
     submittingRef.current = false;
 
     if (!result.ok || !result.session) {
+      if (result.code === "INACTIVE" && result.userId) {
+        setRenewalUserId(result.userId);
+      }
       setError(result.error || "Login failed. Please try again.");
       toast(result.error || "Login failed.", "error");
       return;
@@ -114,7 +120,10 @@ export function LoginForm() {
           </p>
         </div>
         <p className="relative text-xs text-indigo-200/80">
-          satyajit patri
+          DEVELOPED BY SATYAJIT PATRI FROM ODISHA,
+          CONTACT: +91 7205076958,
+          EMAIL: satyajitpatri05@gmail.com,
+          WEBSITE: https://www.satyajitpatri.vercel.app,
         </p>
       </aside>
 
@@ -148,6 +157,8 @@ export function LoginForm() {
                 {error}
               </div>
             )}
+
+            {renewalUserId && <PaymentPanel userId={renewalUserId} />}
 
             <div className="space-y-4">
               <div>

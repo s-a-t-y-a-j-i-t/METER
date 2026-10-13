@@ -110,7 +110,7 @@ export async function clientVerifyOrRegisterDevice(
     const device = normalizeDevice(data.device);
     const sessionVersion =
       typeof data.sessionVersion === "number" ? data.sessionVersion : 0;
-    const clientVersion = getStoredSessionVersion();
+    const clientVersion = getStoredSessionVersion(userDocId);
     const role = String(data.role || "user");
 
     if (device.status === "blocked") {
@@ -140,7 +140,7 @@ export async function clientVerifyOrRegisterDevice(
             "Your session was ended by an administrator. Please sign in again.",
         };
       }
-      setStoredSessionVersion(sessionVersion);
+      setStoredSessionVersion(userDocId, sessionVersion);
       return {
         ok: true,
         sessionVersion,
@@ -178,7 +178,7 @@ export async function clientVerifyOrRegisterDevice(
         }
         throw err;
       }
-      setStoredSessionVersion(sessionVersion || 0);
+      setStoredSessionVersion(userDocId, sessionVersion || 0);
       return {
         ok: true,
         sessionVersion: sessionVersion || 0,
@@ -225,7 +225,7 @@ export async function clientVerifyOrRegisterDevice(
       }
       if (code === "permission-denied") {
         // Still allow session if binding already matches
-        setStoredSessionVersion(sessionVersion);
+        setStoredSessionVersion(userDocId, sessionVersion);
         return {
           ok: true,
           sessionVersion,
@@ -236,7 +236,7 @@ export async function clientVerifyOrRegisterDevice(
       }
     }
 
-    setStoredSessionVersion(sessionVersion);
+    setStoredSessionVersion(userDocId, sessionVersion);
     return {
       ok: true,
       sessionVersion,
@@ -294,7 +294,7 @@ async function evaluateAfterConflict(
       status: "active",
     };
     await updateDoc(ref, { device: next, sessionVersion: sessionVersion || 0 });
-    setStoredSessionVersion(sessionVersion || 0);
+    setStoredSessionVersion(userDocId, sessionVersion || 0);
     return {
       ok: true,
       sessionVersion: sessionVersion || 0,
@@ -312,7 +312,7 @@ async function evaluateAfterConflict(
     };
   }
 
-  setStoredSessionVersion(sessionVersion);
+  setStoredSessionVersion(userDocId, sessionVersion);
   return {
     ok: true,
     sessionVersion,

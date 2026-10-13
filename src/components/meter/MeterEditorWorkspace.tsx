@@ -21,6 +21,7 @@ import {
   sampleMeterScreenColors,
   buildNaturalOverlayPatch,
   applyMeterLookPreset,
+  applySampledScreenColors,
 } from "@/lib/meterOverlay";
 
 export function MeterEditorWorkspace() {
@@ -226,7 +227,6 @@ export function MeterEditorWorkspace() {
       totalProcessed: prev.totalProcessed + 1,
       todayProcessed: prev.todayProcessed + 1,
       lastReading: finalReading,
-      lastProcessedDate: new Date().toISOString().slice(0, 10),
     }));
     logActivity({
       userId: user.id,
@@ -418,9 +418,26 @@ export function MeterEditorWorkspace() {
             onSettingsChange={setSettings}
             onImageError={handleImageError}
             onTransformEnd={(next) => {
+              if (!imageUrl) return;
               void (async () => {
-                const matched = await matchScreenColors(next);
-                setSettings(matched);
+                try {
+                  const colors = await sampleMeterScreenColors(
+                    imageUrl,
+                    next,
+                    adjustments
+                  );
+                  setSettings((current) => {
+                    if (
+                      Math.abs(current.x - next.x) > 0.01 ||
+                      Math.abs(current.y - next.y) > 0.01
+                    ) {
+                      return current;
+                    }
+                    return applySampledScreenColors(current, colors);
+                  });
+                } catch {
+                  /* Keep the position already applied while dragging. */
+                }
               })();
             }}
           />

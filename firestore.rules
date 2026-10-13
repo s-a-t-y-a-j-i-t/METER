@@ -64,10 +64,17 @@ service cloud.firestore {
         && request.resource.data.email == resource.data.email;
     }
 
+    /** Only an admin may start or extend the 1-month access window. */
+    function accessUnchanged() {
+      return resource.data.get('activatedAt', null) == request.resource.data.get('activatedAt', null)
+        && resource.data.get('accessExpiresAt', null) == request.resource.data.get('accessExpiresAt', null);
+    }
+
     /** First bind: no device yet → may set deviceId + meta. */
     function ownerFirstBind() {
       return isOwner()
         && identityUnchanged()
+        && accessUnchanged()
         && (existingDeviceId() == null || existingDeviceId() == '')
         && incomingDeviceId() is string
         && incomingDeviceId().size() >= 16
@@ -79,6 +86,7 @@ service cloud.firestore {
     function ownerSameDeviceRefresh() {
       return isOwner()
         && identityUnchanged()
+        && accessUnchanged()
         && existingDeviceId() is string
         && existingDeviceId() == incomingDeviceId()
         && sessionVersionUnchanged()
@@ -90,6 +98,7 @@ service cloud.firestore {
     function ownerProfileEdit() {
       return isOwner()
         && identityUnchanged()
+        && accessUnchanged()
         && sessionVersionUnchanged()
         && deviceUnchanged()
         && request.resource.data.name is string
@@ -176,8 +185,9 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      // Public get: login-by-userId resolves the Auth email before sign-in.
-      allow get: if true;
+      // Profiles are readable by the owner and admins. Login uses the User ID
+      // email and only reads the profile after Firebase Auth succeeds.
+      allow get: if isAdmin() || isOwner();
 
       // Admins list everyone. A user may query only their own uid.
       allow list: if isAdmin()

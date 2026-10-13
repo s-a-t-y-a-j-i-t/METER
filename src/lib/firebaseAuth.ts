@@ -29,6 +29,7 @@ import {
   getSecondaryAuth,
   getSecondaryDb,
 } from "./firebase";
+import { accessWindowFrom } from "./access";
 import { AppUser, AuthSession, SignupSource, UserRole, UserStatus } from "./types";
 import { logActivity } from "./storage";
 import {
@@ -58,6 +59,8 @@ export interface UserProfile {
   phone?: string;
   contactEmail?: string;
   signupSource?: SignupSource;
+  activatedAt?: string;
+  accessExpiresAt?: string;
   /** Single-device binding — written via Admin API or rules-gated client path. */
   device?: {
     deviceId: string | null;
@@ -82,6 +85,8 @@ function mapProfile(data: UserProfile): AppUser {
     phone: data.phone,
     contactEmail: data.contactEmail,
     signupSource: data.signupSource,
+    activatedAt: data.activatedAt,
+    accessExpiresAt: data.accessExpiresAt,
   };
 }
 
@@ -161,19 +166,38 @@ async function getProfileByEmail(email: string): Promise<UserProfile | null> {
   }
 }
 
-function slugFromEmail(email: string, uid: string): string {
-  const local = email.split("@")[0] || "";
-  const cleaned = local.replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase();
-  return cleaned || uid.slice(0, 12).toLowerCase();
+/** Match a real contact address, not the synthetic sign-in email. */
+async function findUserByContact(
+  contactEmail: string,
+  exceptId: string
+): Promise<UserProfile | null> {
+  const email = contactEmail.trim().toLowerCase();
+  if (!email) return null;
+  const byAuth = await getProfileByEmail(email);
+  if (byAuth && byAuth.id !== exceptId) return byAuth;
+  try {
+    const q = query(
+      collection(getDb(), USERS_COLLECTION),
+      where("contactEmail", "==", email),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    const found = snap.docs[0].data() as UserProfile;
+    return found.id === exceptId ? null : found;
+  } catch (err) {
+    if (isPermissionDenied(err)) return null;
+    throw err;
+  }
 }
 
 /**
- * Auth Console / Add user se bane accounts ke liye Firestore profile banao.
- * Login ke baad hi chalta hai (request.auth present).
+ * Load the Firestore profile for a signed-in Auth user.
+ * Only the default admin is auto-created. Deleted profiles stay deleted.
  */
 async function ensureProfileForAuthUser(
   firebaseUser: FirebaseUser
-): Promise<UserProfile> {
+): Promise<UserProfile | null> {
   const existingByUid = await getProfileByUid(firebaseUser.uid);
   if (existingByUid) return existingByUid;
 
@@ -189,32 +213,28 @@ async function ensureProfileForAuthUser(
     }
   }
 
-  const isDefaultAdmin = email === DEFAULT_ADMIN_EMAIL;
-  const localPart = (email.split("@")[0] || "").toLowerCase();
-  let id = isDefaultAdmin
-    ? "admin"
-    : localPart || slugFromEmail(email || "user", firebaseUser.uid);
-
-  // Avoid colliding with an existing different account
-  const conflict = await getProfileById(id);
-  if (conflict && conflict.uid !== firebaseUser.uid) {
-    id = `${id}_${firebaseUser.uid.slice(0, 6).toLowerCase()}`;
-  }
+  if (email !== DEFAULT_ADMIN_EMAIL) return null;
 
   const profile: UserProfile = {
-    id,
+    id: "admin",
     uid: firebaseUser.uid,
-    name:
-      firebaseUser.displayName?.trim() ||
-      (isDefaultAdmin ? "Administrator" : id),
-    email: email || `${firebaseUser.uid}@users.local`,
-    role: isDefaultAdmin ? "admin" : "user",
-    status: isDefaultAdmin ? "active" : "inactive",
+    name: firebaseUser.displayName?.trim() || "Administrator",
+    email: DEFAULT_ADMIN_EMAIL,
+    role: "admin",
+    status: "active",
     createdAt: new Date().toISOString().slice(0, 10),
   };
-
-  await setDoc(doc(getDb(), USERS_COLLECTION, id), profile);
+  await setDoc(doc(getDb(), USERS_COLLECTION, "admin"), profile, { merge: true });
   return profile;
+}
+
+function isPermissionDenied(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === "object" &&
+    "code" in err &&
+    String((err as { code: string }).code) === "permission-denied"
+  );
 }
 
 function firestoreErrorMessage(err: unknown): string | null {
@@ -303,7 +323,13 @@ export async function firebaseLogin(
   userIdOrEmail: string,
   password: string,
   remember: boolean
-): Promise<{ ok: boolean; error?: string; session?: AuthSession }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  session?: AuthSession;
+  code?: "INACTIVE";
+  userId?: string;
+}> {
   const auth = getFirebaseAuth();
   const input = userIdOrEmail.trim();
   if (!input || !password) {
@@ -327,24 +353,29 @@ export async function firebaseLogin(
       try {
         profile = await getProfileById(input);
       } catch (err) {
-        const fsMsg = firestoreErrorMessage(err);
-        if (fsMsg) return { ok: false, error: fsMsg };
-        throw err;
+        // Locked-down rules hide profiles until sign-in. Use the User ID email.
+        if (!isPermissionDenied(err)) {
+          const fsMsg = firestoreErrorMessage(err);
+          if (fsMsg) return { ok: false, error: fsMsg };
+          throw err;
+        }
       }
-      if (!profile) {
+      if (profile?.status === "inactive") {
         return {
           ok: false,
-          error: "Invalid User ID or password.",
-        };
-      }
-      if (profile.status === "inactive") {
-        return {
-          ok: false,
+          code: "INACTIVE",
+          userId: profile.id,
           error:
-          "Your account is inactive. After payment, ask the administrator to activate your ID.",
+            "Your ID is deactivated. Pay below, then ask the administrator to activate it.",
         };
       }
-      emailForAuth = profile.email;
+      if (profile?.email) {
+        emailForAuth = profile.email;
+      } else if (input.toLowerCase() === "admin") {
+        emailForAuth = DEFAULT_ADMIN_EMAIL;
+      } else {
+        emailForAuth = authEmailForUserId(input);
+      }
     }
 
     await signInWithEmailAndPassword(auth, emailForAuth, password);
@@ -363,7 +394,15 @@ export async function firebaseLogin(
         ok: false,
         error:
           fsMsg ||
-          "Signed in, but could not load/create your profile in Firestore.",
+          "Signed in, but could not load your profile in Firestore.",
+      };
+    }
+
+    if (!profile) {
+      await signOut(auth).catch(() => undefined);
+      return {
+        ok: false,
+        error: "This account has been removed. Contact your administrator.",
       };
     }
 
@@ -371,8 +410,10 @@ export async function firebaseLogin(
       await signOut(auth);
       return {
         ok: false,
+        code: "INACTIVE",
+        userId: profile.id,
         error:
-          "Your account is inactive. After payment, ask the administrator to activate your ID.",
+          "Your ID is deactivated. Pay below, then ask the administrator to activate it.",
       };
     }
 
@@ -448,7 +489,7 @@ export function subscribeAuth(
     }
     try {
       const profile = await ensureProfileForAuthUser(firebaseUser);
-      if (profile.status === "inactive") {
+      if (!profile || profile.status === "inactive") {
         clearDeviceSessionState();
         await signOut(auth);
         onChange(null);
@@ -491,7 +532,26 @@ export function subscribeAuth(
 export async function getFirebaseUsers(): Promise<AppUser[]> {
   await ensureDefaultAdmin();
   const snap = await getDocs(collection(getDb(), USERS_COLLECTION));
-  return snap.docs.map((d) => mapProfile(d.data() as UserProfile));
+  const users = snap.docs.map((d) => mapProfile(d.data() as UserProfile));
+
+  // IDs approved before access dates existed start a 1-month window from today.
+  const missing = users.filter(
+    (u) => u.role !== "admin" && u.status === "active" && !u.accessExpiresAt
+  );
+  if (missing.length === 0) return users;
+
+  const access = accessWindowFrom(new Date());
+  try {
+    await Promise.all(
+      missing.map((u) =>
+        updateDoc(doc(getDb(), USERS_COLLECTION, u.id.toLowerCase()), access)
+      )
+    );
+    const stamped = new Set(missing.map((u) => u.id));
+    return users.map((u) => (stamped.has(u.id) ? { ...u, ...access } : u));
+  } catch {
+    return users;
+  }
 }
 
 export async function getFirebaseUserById(
@@ -508,6 +568,7 @@ export async function createFirebaseUser(
 ): Promise<{
   ok: boolean;
   error?: string;
+  accessExpiresAt?: string;
 }> {
   const id = user.id.trim().toLowerCase();
   const contactEmail = user.email.trim().toLowerCase();
@@ -529,7 +590,17 @@ export async function createFirebaseUser(
     return { ok: false, error: "Enter a valid email address." };
   }
 
-  const existing = await getProfileById(id);
+  let existing: UserProfile | null = null;
+  try {
+    existing = await getProfileById(id);
+  } catch (err) {
+    if (!isPermissionDenied(err)) {
+      return {
+        ok: false,
+        error: firestoreErrorMessage(err) || "Could not check this User ID.",
+      };
+    }
+  }
   if (existing) {
     return { ok: false, error: "A user with this User ID already exists." };
   }
@@ -551,6 +622,8 @@ export async function createFirebaseUser(
 
     const phone = (options?.phone ?? user.phone ?? "").trim();
     const signupSource = options?.signupSource ?? user.signupSource;
+    const startsActive = user.status === "active" && user.role !== "admin";
+    const access = startsActive ? accessWindowFrom(new Date()) : null;
     const profile: UserProfile = {
       id,
       uid: cred.user.uid,
@@ -565,12 +638,13 @@ export async function createFirebaseUser(
         : {}),
       ...(signupSource ? { signupSource } : {}),
       ...(phone ? { phone } : {}),
+      ...(access ?? {}),
     };
     // Admin creates write with the admin session so rules can allow role/status.
     // Public signup writes as the new user (role user, inactive).
     const writerDb = getFirebaseAuth().currentUser ? getDb() : secondaryDb;
     await setDoc(doc(writerDb, USERS_COLLECTION, id), profile);
-    return { ok: true };
+    return { ok: true, accessExpiresAt: access?.accessExpiresAt };
   } catch (err: unknown) {
     const code =
       err && typeof err === "object" && "code" in err
@@ -585,7 +659,7 @@ export async function createFirebaseUser(
 export async function updateFirebaseUser(
   id: string,
   updates: Partial<AppUser>
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; accessExpiresAt?: string }> {
   const key = id.toLowerCase();
   const ref = doc(getDb(), USERS_COLLECTION, key);
   const snap = await getDoc(ref);
@@ -607,23 +681,37 @@ export async function updateFirebaseUser(
   if (updates.role) next.role = updates.role;
   if (updates.status) next.status = updates.status;
 
+  const nextRole = next.role ?? current.role;
+  const activating =
+    updates.status === "active" &&
+    current.status !== "active" &&
+    key !== "admin" &&
+    nextRole !== "admin";
+  if (activating) {
+    const access = accessWindowFrom(new Date());
+    next.activatedAt = access.activatedAt;
+    next.accessExpiresAt = access.accessExpiresAt;
+  }
+
   // Protect default admin
   if (key === "admin") {
     next.role = "admin";
     next.status = "active";
+    delete next.activatedAt;
+    delete next.accessExpiresAt;
   }
 
   // Email change on Auth requires re-auth / Admin SDK — keep profile email in sync only
   // if it matches current (profile updates without Auth email change for now)
   if (next.contactEmail && next.contactEmail !== current.contactEmail) {
-    const conflict = await getProfileByEmail(next.contactEmail);
-    if (conflict && conflict.id !== key) {
+    const conflict = await findUserByContact(next.contactEmail, key);
+    if (conflict) {
       return { ok: false, error: "A user with this email already exists." };
     }
   }
 
   await updateDoc(ref, next);
-  return { ok: true };
+  return { ok: true, accessExpiresAt: next.accessExpiresAt };
 }
 
 export async function deleteFirebaseUser(
@@ -641,6 +729,42 @@ export async function deleteFirebaseUser(
   // Remove Firestore profile; Auth account remains but cannot obtain a profile session.
   await deleteDoc(ref);
   return { ok: true };
+}
+
+/**
+ * Admin sets another user's password. Auth email is synthetic, so a reset
+ * email would never reach the person. Requires the Admin SDK on the server.
+ */
+export async function adminSetUserPassword(
+  userId: string,
+  password: string
+): Promise<{ ok: boolean; error?: string }> {
+  const current = getFirebaseAuth().currentUser;
+  if (!current) return { ok: false, error: "Not signed in." };
+  if (!password || password.length < 6) {
+    return { ok: false, error: "Password must be at least 6 characters." };
+  }
+  try {
+    const token = await current.getIdToken();
+    const res = await fetch("/api/admin/users/password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ userId, password }),
+    });
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok || !data.ok) {
+      return {
+        ok: false,
+        error: data.error || "Unable to set this password.",
+      };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Unable to set this password. Check your connection." };
+  }
 }
 
 export async function sendFirebasePasswordReset(

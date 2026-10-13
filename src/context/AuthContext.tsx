@@ -31,7 +31,13 @@ interface AuthContextValue {
     userId: string,
     password: string,
     remember: boolean
-  ) => Promise<{ ok: boolean; error?: string; session?: AuthSession }>;
+  ) => Promise<{
+    ok: boolean;
+    error?: string;
+    session?: AuthSession;
+    code?: "INACTIVE";
+    userId?: string;
+  }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   /** Re-run device check (used by ProtectedRoute). */
@@ -94,9 +100,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    await firebaseLogout({ recordActivity: true });
+    // Clear the session before the async sign-out so /login does not
+    // bounce back to the dashboard while Firebase is still signed in.
     setUser(null);
     setDeviceVerified(false);
+    await firebaseLogout({ recordActivity: true });
   }, []);
 
   const reverifyDevice = useCallback(async () => {

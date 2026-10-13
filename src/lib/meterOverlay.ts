@@ -910,6 +910,22 @@ export function sampleMeterScreenColors(
   });
 }
 
+/** Update LCD colors after a drag without resetting size, padding, or dust. */
+export function applySampledScreenColors(
+  base: OverlaySettings,
+  colors: { background: string; textColor: string }
+): OverlaySettings {
+  if (base.background === "transparent") {
+    return { ...base, textColor: colors.textColor };
+  }
+  return {
+    ...base,
+    background: "custom",
+    customBackground: colors.background,
+    textColor: colors.textColor,
+  };
+}
+
 export function buildNaturalOverlayPatch(
   base: OverlaySettings,
   colors: { background: string; textColor: string }

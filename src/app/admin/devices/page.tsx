@@ -38,10 +38,16 @@ function statusLabel(row: RegisteredDeviceRow): {
   label: string;
   className: string;
 } {
-  if (row.status === "inactive" || row.device.status === "blocked") {
+  if (row.device.status === "blocked") {
     return {
       label: "Blocked",
       className: "bg-danger-bg text-danger",
+    };
+  }
+  if (row.status === "inactive") {
+    return {
+      label: "User inactive",
+      className: "bg-bg-muted text-muted",
     };
   }
   if (!row.device.deviceId) {
@@ -127,7 +133,7 @@ export default function RegisteredDevicesPage() {
     return rows.filter(
       (r) =>
         r.name.toLowerCase().includes(q) ||
-        r.email.toLowerCase().includes(q) ||
+        (r.contactEmail || "").toLowerCase().includes(q) ||
         r.id.toLowerCase().includes(q) ||
         (r.device.deviceId || "").toLowerCase().includes(q) ||
         (r.device.browser || "").toLowerCase().includes(q) ||
@@ -139,7 +145,12 @@ export default function RegisteredDevicesPage() {
     setPage(1);
   }, [search]);
 
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
 
   const runAction = async () => {
     if (!pending || busy) return;
@@ -246,7 +257,9 @@ export default function RegisteredDevicesPage() {
                         <tr key={row.id} className="align-top">
                           <td className="px-3 py-3">
                             <p className="font-medium text-text">{row.name}</p>
-                            <p className="text-xs text-muted">{row.email}</p>
+                            {row.contactEmail ? (
+                              <p className="text-xs text-muted">{row.contactEmail}</p>
+                            ) : null}
                             <p className="text-xs text-muted">ID: {row.id}</p>
                           </td>
                           <td className="px-3 py-3 text-text-secondary">
@@ -347,7 +360,7 @@ export default function RegisteredDevicesPage() {
 
               <div className="mt-4">
                 <Pagination
-                  page={page}
+                  page={safePage}
                   pageSize={PAGE_SIZE}
                   total={filtered.length}
                   onPageChange={setPage}

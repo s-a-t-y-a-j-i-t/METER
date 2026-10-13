@@ -18,6 +18,10 @@ export const metadata: Metadata = {
   title: APP_TITLE,
   description: APP_DESCRIPTION,
   applicationName: "MeterVision",
+  icons: {
+    icon: [{ url: "/brand/logo.jpg", type: "image/jpeg" }],
+    apple: [{ url: "/brand/logo.jpg", type: "image/jpeg" }],
+  },
 };
 
 export const viewport: Viewport = {

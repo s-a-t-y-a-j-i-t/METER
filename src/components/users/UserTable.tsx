@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   Search,
@@ -15,6 +24,7 @@ import {
   Link2,
 } from "lucide-react";
 import { AppUser } from "@/lib/types";
+import { isAccessDue } from "@/lib/access";
 import { formatDisplayDate, formatDisplayDateTime, cn } from "@/lib/utils";
 import { Button } from "@/components/common/Button";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -33,6 +43,10 @@ interface UserTableProps {
 
 const PAGE_SIZE = 10;
 
+function contactEmailOf(user: AppUser): string {
+  return user.contactEmail?.trim() || "";
+}
+
 export function UserTable({
   users,
   onCreate,
@@ -50,12 +64,14 @@ export function UserTable({
   const [page, setPage] = useState(1);
   const [menuUserId, setMenuUserId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuUserId(null);
-      }
+      const target = e.target as Node;
+      if (menuRef.current?.contains(target)) return;
+      if (menuPanelRef.current?.contains(target)) return;
+      setMenuUserId(null);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -70,7 +86,8 @@ export function UserTable({
       return (
         u.id.toLowerCase().includes(q) ||
         u.name.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q)
+        contactEmailOf(u).toLowerCase().includes(q) ||
+        (u.phone || "").toLowerCase().includes(q)
       );
     });
   }, [users, search, roleFilter, statusFilter]);
@@ -199,7 +216,7 @@ export function UserTable({
           {/* Desktop table */}
           <div className="hidden overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-sm lg:block">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[880px] text-left text-sm">
+              <table className="w-full min-w-[1040px] text-left text-sm">
                 <thead className="border-b border-border bg-bg-muted text-xs uppercase tracking-wide text-muted">
                   <tr>
                     <th className="px-4 py-3 font-semibold">User</th>
@@ -207,6 +224,7 @@ export function UserTable({
                     <th className="px-4 py-3 font-semibold">Email</th>
                     <th className="px-4 py-3 font-semibold">Role</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 font-semibold">Access until</th>
                     <th className="px-4 py-3 font-semibold">Created</th>
                     <th className="px-4 py-3 font-semibold">Last Activity</th>
                     <th className="px-4 py-3 font-semibold">Actions</th>
@@ -224,19 +242,30 @@ export function UserTable({
                               <p className="truncate font-semibold text-text">
                                 {u.name}
                               </p>
-                              <p className="truncate text-xs text-muted">
-                                {u.email || "—"}
-                              </p>
+                              {contactEmailOf(u) ? (
+                                <p className="truncate text-xs text-muted">
+                                  {contactEmailOf(u)}
+                                </p>
+                              ) : null}
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 font-medium">{u.id}</td>
-                        <td className="px-4 py-3 text-muted">{u.email || "—"}</td>
+                        <td className="px-4 py-3 text-muted">
+                          {contactEmailOf(u) || "—"}
+                        </td>
                         <td className="px-4 py-3">
                           <RoleBadge role={u.role} />
                         </td>
                         <td className="px-4 py-3">
-                          <StatusBadge status={u.status} signupSource={u.signupSource} />
+                          <StatusBadge
+                            status={u.status}
+                            signupSource={u.signupSource}
+                            due={isAccessDue(u)}
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-muted">
+                          <AccessUntil user={u} />
                         </td>
                         <td className="px-4 py-3 text-muted">
                           {formatDisplayDate(u.createdAt)}
@@ -262,6 +291,8 @@ export function UserTable({
                             </button>
                             {menuUserId === u.id && (
                               <ActionMenu
+                                anchorRef={menuRef}
+                                panelRef={menuPanelRef}
                                 user={u}
                                 onView={() => {
                                   setMenuUserId(null);
@@ -312,13 +343,20 @@ export function UserTable({
                       </p>
                       <p className="truncate text-sm text-muted">{u.id}</p>
                       <p className="truncate text-sm text-muted">
-                        {u.email || "No email"}
+                        {contactEmailOf(u) || "No contact email"}
                       </p>
                     </div>
-                    <StatusBadge status={u.status} signupSource={u.signupSource} />
+                    <StatusBadge
+                      status={u.status}
+                      signupSource={u.signupSource}
+                      due={isAccessDue(u)}
+                    />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
                     <RoleBadge role={u.role} />
+                    <span className="rounded-full bg-bg-muted px-2.5 py-1 text-muted">
+                      <AccessUntil user={u} prefix />
+                    </span>
                     <span className="rounded-full bg-bg-muted px-2.5 py-1 text-muted">
                       Created {formatDisplayDate(u.createdAt)}
                     </span>
@@ -345,7 +383,7 @@ export function UserTable({
                       {u.status === "active" ? "Deactivate" : "Activate"}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => onResetPassword(u)} className="min-h-10">
-                      Reset Password
+                      Set Password
                     </Button>
                     <Button
                       size="sm"
@@ -385,26 +423,45 @@ function Avatar({ name }: { name: string }) {
   );
 }
 
+function AccessUntil({ user, prefix }: { user: AppUser; prefix?: boolean }) {
+  if (user.role === "admin") return <>—</>;
+  if (!user.accessExpiresAt) {
+    return <>{prefix ? "Access not set" : "—"}</>;
+  }
+  const label = formatDisplayDate(user.accessExpiresAt);
+  const due = isAccessDue(user);
+  return (
+    <span className={due ? "font-semibold text-amber-700 dark:text-amber-300" : undefined}>
+      {prefix ? `Access until ${label}` : label}
+      {due ? " · finished" : ""}
+    </span>
+  );
+}
+
 function StatusBadge({
   status,
   signupSource,
+  due,
 }: {
   status: string;
   signupSource?: string;
+  due?: boolean;
 }) {
   const pending = status === "inactive" && signupSource === "invite";
   return (
     <span
       className={cn(
         "inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize",
-        status === "active"
-          ? "bg-success-bg text-success"
-          : pending
-            ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
-            : "bg-bg-muted text-muted"
+        due
+          ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+          : status === "active"
+            ? "bg-success-bg text-success"
+            : pending
+              ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+              : "bg-bg-muted text-muted"
       )}
     >
-      {pending ? "Pending" : status}
+      {due ? "Due" : pending ? "Pending" : status}
     </span>
   );
 }
@@ -425,6 +482,8 @@ function RoleBadge({ role }: { role: string }) {
 }
 
 function ActionMenu({
+  anchorRef,
+  panelRef,
   user,
   onView,
   onEdit,
@@ -432,6 +491,8 @@ function ActionMenu({
   onReset,
   onDelete,
 }: {
+  anchorRef: RefObject<HTMLDivElement | null>;
+  panelRef: RefObject<HTMLDivElement | null>;
   user: AppUser;
   onView: () => void;
   onEdit: () => void;
@@ -439,12 +500,58 @@ function ActionMenu({
   onReset: () => void;
   onDelete: () => void;
 }) {
+  const localRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ top: number; left: number } | null>(null);
   const protectedAdmin = user.id.toLowerCase() === "admin";
   const item =
     "flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-text-secondary hover:bg-bg-muted";
-  return (
+
+  const place = useCallback(() => {
+    const anchor = anchorRef.current;
+    const panel = localRef.current;
+    if (!anchor || !panel) return;
+    const rect = anchor.getBoundingClientRect();
+    const height = panel.offsetHeight;
+    const width = panel.offsetWidth || 208;
+    const gap = 6;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < height + gap;
+    const top = openUp
+      ? Math.max(8, rect.top - height - gap)
+      : rect.bottom + gap;
+    const left = Math.max(
+      8,
+      Math.min(rect.right - width, window.innerWidth - width - 8)
+    );
+    setBox((prev) =>
+      prev && prev.top === top && prev.left === left ? prev : { top, left }
+    );
+  }, [anchorRef]);
+
+  useLayoutEffect(() => {
+    place();
+    const onMove = () => place();
+    window.addEventListener("resize", onMove);
+    window.addEventListener("scroll", onMove, true);
+    return () => {
+      window.removeEventListener("resize", onMove);
+      window.removeEventListener("scroll", onMove, true);
+      panelRef.current = null;
+    };
+  }, [place, panelRef]);
+
+  const menu = (
     <div
-      className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
+      ref={(node) => {
+        localRef.current = node;
+        panelRef.current = node;
+      }}
+      style={
+        box
+          ? { position: "fixed", top: box.top, left: box.left, zIndex: 60 }
+          : { position: "fixed", top: 0, left: 0, visibility: "hidden" }
+      }
+      className="w-52 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
       role="menu"
     >
       <button type="button" className={item} role="menuitem" onClick={onView}>
@@ -454,7 +561,7 @@ function ActionMenu({
         <Pencil className="h-4 w-4" /> Edit
       </button>
       <button type="button" className={item} role="menuitem" onClick={onReset}>
-        <KeyRound className="h-4 w-4" /> Reset Password
+        <KeyRound className="h-4 w-4" /> Set Password
       </button>
       <button
         type="button"
@@ -477,6 +584,8 @@ function ActionMenu({
       </button>
     </div>
   );
+
+  return createPortal(menu, document.body);
 }
 
 /** Used by view details modal */

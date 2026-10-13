@@ -67,7 +67,7 @@ export default function AdminInvitePage() {
       } finally {
         if (!cancelled) setLoading(false);
       }
-      await refreshPending();
+      if (!cancelled) await refreshPending();
     })();
     return () => {
       cancelled = true;

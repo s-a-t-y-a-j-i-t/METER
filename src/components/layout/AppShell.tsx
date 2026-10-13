@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AccessExpiryPrompt } from "@/components/admin/AccessExpiryPrompt";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { Sidebar } from "./Sidebar";
@@ -29,6 +30,7 @@ export function AppShell({
           <main className="mx-auto w-full max-w-7xl px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
             <ErrorBoundary>{children}</ErrorBoundary>
           </main>
+          <AccessExpiryPrompt />
         </div>
       </div>
     </ProtectedRoute>
