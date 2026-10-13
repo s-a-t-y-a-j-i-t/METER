@@ -21,6 +21,8 @@ export interface DeviceBinding {
   status: DeviceBindingStatus;
 }
 
+export type SignupSource = "admin" | "invite";
+
 export interface AppUser {
   id: string;
   name: string;
@@ -28,7 +30,27 @@ export interface AppUser {
   role: UserRole;
   status: UserStatus;
   createdAt: string;
+  phone?: string;
+  /** Real contact address. `email` stays the Firebase Auth address used for User ID login. */
+  contactEmail?: string;
+  signupSource?: SignupSource;
 }
+
+export interface SignupPaymentConfig {
+  enabled: boolean;
+  upiId: string;
+  payeeName: string;
+  amount: string;
+  note: string;
+}
+
+export const DEFAULT_SIGNUP_PAYMENT: SignupPaymentConfig = {
+  enabled: true,
+  upiId: "",
+  payeeName: "MeterVision",
+  amount: "",
+  note: "MeterVision ID",
+};
 
 export interface AuthSession {
   id: string;

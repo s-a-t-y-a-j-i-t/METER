@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
@@ -40,13 +40,18 @@ export function ProtectedRoute({
     [allowedRoles]
   );
 
+  const userId = user?.id;
+  const userRole = user?.role;
+  const passedOnce = useRef(false);
+
   useEffect(() => {
     let cancelled = false;
 
     async function verify() {
       if (isLoading) return;
 
-      if (!isAuthenticated || !user) {
+      if (!isAuthenticated || !userId) {
+        passedOnce.current = false;
         router.replace("/login");
         if (!cancelled) {
           setRoleOk(false);
@@ -55,7 +60,9 @@ export function ProtectedRoute({
         return;
       }
 
-      // Device must be verified before any dashboard access
+      // Keep the current screen visible on re-checks (typing / token refresh).
+      if (!passedOnce.current) setChecking(true);
+
       const deviceCheck = await reverifyDevice();
       if (cancelled) return;
 
@@ -67,7 +74,7 @@ export function ProtectedRoute({
         return;
       }
 
-      const fresh = await getFirebaseUserById(user.id);
+      const fresh = await getFirebaseUserById(userId);
       if (cancelled) return;
 
       if (!fresh || fresh.status === "inactive") {
@@ -78,7 +85,7 @@ export function ProtectedRoute({
         return;
       }
 
-      if (fresh.role !== user.role) {
+      if (fresh.role !== userRole) {
         await refreshUser();
       }
 
@@ -92,11 +99,11 @@ export function ProtectedRoute({
       }
 
       setDeviceError("");
+      passedOnce.current = true;
       setRoleOk(true);
       setChecking(false);
     }
 
-    setChecking(true);
     void verify();
 
     return () => {
@@ -105,13 +112,13 @@ export function ProtectedRoute({
   }, [
     isLoading,
     isAuthenticated,
-    user,
+    userId,
+    userRole,
     rolesKey,
     allowedRoles,
     router,
     refreshUser,
     reverifyDevice,
-    deviceVerified,
   ]);
 
   if (isLoading || checking) {

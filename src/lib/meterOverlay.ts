@@ -335,47 +335,6 @@ function drawMeterLcdFontText(
   ctx.restore();
 }
 
-function drawSpacedText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  align: OverlaySettings["align"],
-  spacing: number,
-  color: string,
-  softness: number,
-  opacity = 0.85
-) {
-  ctx.save();
-  ctx.globalAlpha = opacity;
-  ctx.fillStyle = color;
-  ctx.textBaseline = "middle";
-  if (softness > 0) {
-    ctx.shadowColor = color;
-    ctx.shadowBlur = softness * 2;
-  }
-
-  const chars = [...text];
-  const widths = chars.map((ch) => ctx.measureText(ch).width);
-  const total =
-    widths.reduce((a, b) => a + b, 0) +
-    Math.max(0, chars.length - 1) * spacing;
-
-  let cursor =
-    align === "left"
-      ? x
-      : align === "right"
-        ? x - total
-        : x - total / 2;
-
-  ctx.textAlign = "left";
-  chars.forEach((ch, i) => {
-    ctx.fillText(ch, cursor, y);
-    cursor += widths[i] + spacing;
-  });
-  ctx.restore();
-}
-
 function roundRect(
   ctx: CanvasRenderingContext2D,
   x: number,

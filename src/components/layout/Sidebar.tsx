@@ -14,6 +14,7 @@ import {
   LogOut,
   X,
   Smartphone,
+  Link2,
   LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ export interface NavItem {
 export const adminNav: NavItem[] = [
   { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Users", href: "/admin/users", icon: Users },
+  { label: "Invite & Payment", href: "/admin/invite", icon: Link2 },
   { label: "Registered Devices", href: "/admin/devices", icon: Smartphone },
   { label: "Activity", href: "/admin/activity", icon: Activity },
   { label: "Settings", href: "/admin/settings", icon: Settings },

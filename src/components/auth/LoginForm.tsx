@@ -130,7 +130,8 @@ export function LoginForm() {
               Sign in
             </h1>
             <p className="mt-1 text-sm leading-6 text-white/80 lg:text-[var(--color-text-secondary)]">
-              Sign in with the User ID and password given by your admin.
+              Sign in with your User ID and password. New IDs work after admin
+              activation.
             </p>
           </div>
 

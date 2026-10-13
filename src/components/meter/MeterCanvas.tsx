@@ -75,10 +75,15 @@ export function MeterCanvas({
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [fontReady, setFontReady] = useState(false);
+  const [editing, setEditing] = useState(true);
 
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    if (showOverlay) setEditing(true);
+  }, [showOverlay, imageUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,10 +112,10 @@ export function MeterCanvas({
 
     if (showOverlay && settings.text.trim()) {
       drawOverlay(ctx, canvas.width, canvas.height, settings, {
-        showHandles: true,
+        showHandles: editing,
       });
     }
-  }, [settings, showOverlay, adjustments, fontReady]);
+  }, [settings, showOverlay, adjustments, editing]);
 
   useEffect(() => {
     setReady(false);
@@ -136,7 +141,7 @@ export function MeterCanvas({
 
   useEffect(() => {
     if (ready) draw();
-  }, [ready, draw]);
+  }, [ready, fontReady, draw]);
 
   const pointerToCanvas = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = displayCanvasRef.current;
@@ -191,8 +196,15 @@ export function MeterCanvas({
       pt.x,
       pt.y
     );
-    if (!mode) return;
+    if (!mode) {
+      setEditing(false);
+      setHoverMode(null);
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
+      return;
+    }
 
+    setEditing(true);
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
 
@@ -427,8 +439,9 @@ export function MeterCanvas({
           <span className="font-semibold text-primary sm:text-text-secondary">
             Tip:
           </span>{" "}
-          Drag the number to move · corner boxes to resize · top circle to
-          rotate
+          {editing
+            ? "Drag the number to move · corner boxes to resize · top circle to rotate. Tap the photo to hide the box."
+            : "Tap the number to show the edit box again."}
         </p>
       )}
     </div>

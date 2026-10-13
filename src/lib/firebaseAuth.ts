@@ -29,7 +29,7 @@ import {
   getSecondaryAuth,
   getSecondaryDb,
 } from "./firebase";
-import { AppUser, AuthSession, UserRole, UserStatus } from "./types";
+import { AppUser, AuthSession, SignupSource, UserRole, UserStatus } from "./types";
 import { logActivity } from "./storage";
 import {
   clearDeviceSessionState,
@@ -55,6 +55,9 @@ export interface UserProfile {
   role: UserRole;
   status: UserStatus;
   createdAt: string;
+  phone?: string;
+  contactEmail?: string;
+  signupSource?: SignupSource;
   /** Single-device binding — written via Admin API or rules-gated client path. */
   device?: {
     deviceId: string | null;
@@ -76,6 +79,9 @@ function mapProfile(data: UserProfile): AppUser {
     role: data.role,
     status: data.status,
     createdAt: data.createdAt,
+    phone: data.phone,
+    contactEmail: data.contactEmail,
+    signupSource: data.signupSource,
   };
 }
 
@@ -135,14 +141,24 @@ async function getProfileByUid(uid: string): Promise<UserProfile | null> {
 }
 
 async function getProfileByEmail(email: string): Promise<UserProfile | null> {
-  const q = query(
-    collection(getDb(), USERS_COLLECTION),
-    where("email", "==", email.trim().toLowerCase()),
-    limit(1)
-  );
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-  return snap.docs[0].data() as UserProfile;
+  try {
+    const q = query(
+      collection(getDb(), USERS_COLLECTION),
+      where("email", "==", email.trim().toLowerCase()),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    return snap.docs[0].data() as UserProfile;
+  } catch (err) {
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code: string }).code)
+        : "";
+    // Signed-out signup cannot list users. User ID lookup already covers duplicates.
+    if (code === "permission-denied") return null;
+    throw err;
+  }
 }
 
 function slugFromEmail(email: string, uid: string): string {
@@ -174,7 +190,10 @@ async function ensureProfileForAuthUser(
   }
 
   const isDefaultAdmin = email === DEFAULT_ADMIN_EMAIL;
-  let id = isDefaultAdmin ? "admin" : slugFromEmail(email || "user", firebaseUser.uid);
+  const localPart = (email.split("@")[0] || "").toLowerCase();
+  let id = isDefaultAdmin
+    ? "admin"
+    : localPart || slugFromEmail(email || "user", firebaseUser.uid);
 
   // Avoid colliding with an existing different account
   const conflict = await getProfileById(id);
@@ -190,7 +209,7 @@ async function ensureProfileForAuthUser(
       (isDefaultAdmin ? "Administrator" : id),
     email: email || `${firebaseUser.uid}@users.local`,
     role: isDefaultAdmin ? "admin" : "user",
-    status: "active",
+    status: isDefaultAdmin ? "active" : "inactive",
     createdAt: new Date().toISOString().slice(0, 10),
   };
 
@@ -321,7 +340,8 @@ export async function firebaseLogin(
       if (profile.status === "inactive") {
         return {
           ok: false,
-          error: "Your account is inactive. Please contact the administrator.",
+          error:
+          "Your account is inactive. After payment, ask the administrator to activate your ID.",
         };
       }
       emailForAuth = profile.email;
@@ -351,7 +371,8 @@ export async function firebaseLogin(
       await signOut(auth);
       return {
         ok: false,
-        error: "Your account is inactive. Please contact the administrator.",
+        error:
+          "Your account is inactive. After payment, ask the administrator to activate your ID.",
       };
     }
 
@@ -482,7 +503,8 @@ export async function getFirebaseUserById(
 
 export async function createFirebaseUser(
   user: AppUser,
-  password: string
+  password: string,
+  options?: { signupSource?: SignupSource; phone?: string }
 ): Promise<{
   ok: boolean;
   error?: string;
@@ -527,6 +549,8 @@ export async function createFirebaseUser(
     );
     await updateProfile(cred.user, { displayName: user.name.trim() || id });
 
+    const phone = (options?.phone ?? user.phone ?? "").trim();
+    const signupSource = options?.signupSource ?? user.signupSource;
     const profile: UserProfile = {
       id,
       uid: cred.user.uid,
@@ -536,8 +560,16 @@ export async function createFirebaseUser(
       role: user.role,
       status: user.status,
       createdAt: user.createdAt || new Date().toISOString().slice(0, 10),
+      ...(contactEmail && contactEmail !== authEmail
+        ? { contactEmail }
+        : {}),
+      ...(signupSource ? { signupSource } : {}),
+      ...(phone ? { phone } : {}),
     };
-    await setDoc(doc(secondaryDb, USERS_COLLECTION, id), profile);
+    // Admin creates write with the admin session so rules can allow role/status.
+    // Public signup writes as the new user (role user, inactive).
+    const writerDb = getFirebaseAuth().currentUser ? getDb() : secondaryDb;
+    await setDoc(doc(writerDb, USERS_COLLECTION, id), profile);
     return { ok: true };
   } catch (err: unknown) {
     const code =
@@ -563,8 +595,14 @@ export async function updateFirebaseUser(
   const next: Partial<UserProfile> = {};
 
   if (typeof updates.name === "string") next.name = updates.name.trim();
+  // `email` is the Firebase Auth address. Overwriting it breaks User ID login.
   if (typeof updates.email === "string") {
-    next.email = updates.email.trim().toLowerCase();
+    const contact = updates.email.trim().toLowerCase();
+    if (contact.endsWith(`@${AUTH_EMAIL_DOMAIN}`)) {
+      // Form echoed the synthetic sign-in address — not a contact email.
+    } else {
+      next.contactEmail = contact;
+    }
   }
   if (updates.role) next.role = updates.role;
   if (updates.status) next.status = updates.status;
@@ -577,8 +615,8 @@ export async function updateFirebaseUser(
 
   // Email change on Auth requires re-auth / Admin SDK — keep profile email in sync only
   // if it matches current (profile updates without Auth email change for now)
-  if (next.email && next.email !== current.email) {
-    const conflict = await getProfileByEmail(next.email);
+  if (next.contactEmail && next.contactEmail !== current.contactEmail) {
+    const conflict = await getProfileByEmail(next.contactEmail);
     if (conflict && conflict.id !== key) {
       return { ok: false, error: "A user with this email already exists." };
     }

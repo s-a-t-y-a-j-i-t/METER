@@ -22,7 +22,8 @@ service cloud.firestore {
         && callerDocId() != ''
         && exists(callerDocPath())
         && get(callerDocPath()).data.uid == request.auth.uid
-        && get(callerDocPath()).data.role == 'admin';
+        && get(callerDocPath()).data.role == 'admin'
+        && get(callerDocPath()).data.status == 'active';
     }
 
     function isOwner() {
@@ -46,18 +47,38 @@ service cloud.firestore {
         == request.resource.data.get('sessionVersion', 0);
     }
 
+    function deviceUnchanged() {
+      return existingDeviceId() == incomingDeviceId()
+        && (
+          !resource.data.keys().hasAll(['device'])
+          || resource.data.device == request.resource.data.device
+        );
+    }
+
+    /** Identity fields a normal user must not rewrite. */
+    function identityUnchanged() {
+      return request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.email == resource.data.email;
+    }
+
     /** First bind: no device yet → may set deviceId + meta. */
     function ownerFirstBind() {
       return isOwner()
+        && identityUnchanged()
         && (existingDeviceId() == null || existingDeviceId() == '')
         && incomingDeviceId() is string
         && incomingDeviceId().size() >= 16
+        && incomingDeviceId().size() <= 128
         && sessionVersionUnchanged();
     }
 
     /** Same device: may refresh lastLoginAt / browser meta only. */
     function ownerSameDeviceRefresh() {
       return isOwner()
+        && identityUnchanged()
         && existingDeviceId() is string
         && existingDeviceId() == incomingDeviceId()
         && sessionVersionUnchanged()
@@ -65,34 +86,109 @@ service cloud.firestore {
              == resource.data.device.firstLoginAt;
     }
 
-    /** Profile/status edits that do not touch the device binding. */
-    function nonDeviceProfileEdit() {
-      return sessionVersionUnchanged()
-        && existingDeviceId() == incomingDeviceId()
+    /** Name / phone / contact email only. */
+    function ownerProfileEdit() {
+      return isOwner()
+        && identityUnchanged()
+        && sessionVersionUnchanged()
+        && deviceUnchanged()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80;
+    }
+
+    function validProfile(data) {
+      return data.id is string
+        && data.id.size() >= 2
+        && data.id.size() <= 32
+        && data.uid is string
+        && data.uid.size() > 0
+        && data.uid.size() <= 128
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.email is string
+        && data.email.size() <= 200
+        && data.role in ['admin', 'user']
+        && data.status in ['active', 'inactive']
+        && data.createdAt is string
+        && data.createdAt.size() <= 40
         && (
-          !resource.data.keys().hasAll(['device'])
-          || resource.data.device == request.resource.data.device
+          !data.keys().hasAny(['phone'])
+          || (data.phone is string && data.phone.size() <= 20)
+        )
+        && (
+          !data.keys().hasAny(['contactEmail'])
+          || (data.contactEmail is string && data.contactEmail.size() <= 200)
+        )
+        && (
+          !data.keys().hasAny(['signupSource'])
+          || data.signupSource in ['admin', 'invite']
+        )
+        && (
+          !data.keys().hasAny(['sessionVersion'])
+          || data.sessionVersion is int
         );
     }
 
+    function noBoundDevice() {
+      return !request.resource.data.keys().hasAll(['device'])
+        || request.resource.data.device.get('deviceId', null) == null;
+    }
+
+    /** Public signup and first profile create: cannot grant admin or skip activation. */
+    function selfCreate(userId) {
+      return signedIn()
+        && validProfile(request.resource.data)
+        && request.auth.uid == request.resource.data.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.id == userId
+        && userId == callerDocId()
+        && userId != 'admin'
+        && request.resource.data.role == 'user'
+        && request.resource.data.status == 'inactive'
+        && noBoundDevice();
+    }
+
+    /** First admin document, written by the default admin Auth user. */
+    function adminBootstrap(userId) {
+      return signedIn()
+        && request.auth.token.email == 'admin@meter-f4067.firebaseapp.com'
+        && userId == 'admin'
+        && request.auth.uid == request.resource.data.uid
+        && request.resource.data.role == 'admin'
+        && request.resource.data.status == 'active'
+        && request.resource.data.email == request.auth.token.email
+        && noBoundDevice();
+    }
+
+    /** Signed-in admin creating another user's profile. */
+    function adminCreate(userId) {
+      return isAdmin()
+        && validProfile(request.resource.data)
+        && request.resource.data.id == userId
+        && noBoundDevice();
+    }
+
+    match /appConfig/{docId} {
+      allow get: if true;
+      allow list, write: if isAdmin();
+    }
+
     match /users/{userId} {
-      // Public get: login-by-userId resolves email before Auth.
+      // Public get: login-by-userId resolves the Auth email before sign-in.
       allow get: if true;
 
-      allow list: if signedIn();
+      // Admins list everyone. A user may query only their own uid.
+      allow list: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid);
 
-      // Create profile without a bound device.
-      allow create: if signedIn() && (
-        !request.resource.data.keys().hasAll(['device'])
-        || request.resource.data.device.get('deviceId', null) == null
-      );
+      allow create: if selfCreate(userId) || adminBootstrap(userId) || adminCreate(userId);
 
-      allow update: if signedIn() && (
-        isAdmin()
+      allow update: if isAdmin()
         || ownerFirstBind()
         || ownerSameDeviceRefresh()
-        || nonDeviceProfileEdit()
-      );
+        || ownerProfileEdit();
 
       allow delete: if isAdmin();
     }

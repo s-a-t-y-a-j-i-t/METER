@@ -171,7 +171,7 @@ export function EditorControls({
       <div>
         <h3 className="text-card-title">Edit Number</h3>
         <p className="mt-1 text-caption">
-          Drag on the photo to move · use corners to resize
+          Drag the number to move it. Tap the photo to hide the edit box.
         </p>
       </div>
 

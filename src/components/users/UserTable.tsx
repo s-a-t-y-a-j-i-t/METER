@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Search,
   UserPlus,
@@ -11,6 +12,7 @@ import {
   Power,
   Trash2,
   Users,
+  Link2,
 } from "lucide-react";
 import { AppUser } from "@/lib/types";
 import { formatDisplayDate, formatDisplayDateTime, cn } from "@/lib/utils";
@@ -103,10 +105,18 @@ export function UserTable({
             Manage application users and access.
           </p>
         </div>
-        <Button onClick={onCreate} className="min-h-11 shrink-0">
-          <UserPlus className="h-4 w-4" aria-hidden="true" />
-          Create User
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Link href="/admin/invite">
+            <Button variant="outline" className="min-h-11 w-full shrink-0 sm:w-auto">
+              <Link2 className="h-4 w-4" aria-hidden="true" />
+              Invite link
+            </Button>
+          </Link>
+          <Button onClick={onCreate} className="min-h-11 shrink-0">
+            <UserPlus className="h-4 w-4" aria-hidden="true" />
+            Create User
+          </Button>
+        </div>
       </div>
 
       <div className="relative">
@@ -226,7 +236,7 @@ export function UserTable({
                           <RoleBadge role={u.role} />
                         </td>
                         <td className="px-4 py-3">
-                          <StatusBadge status={u.status} />
+                          <StatusBadge status={u.status} signupSource={u.signupSource} />
                         </td>
                         <td className="px-4 py-3 text-muted">
                           {formatDisplayDate(u.createdAt)}
@@ -305,7 +315,7 @@ export function UserTable({
                         {u.email || "No email"}
                       </p>
                     </div>
-                    <StatusBadge status={u.status} />
+                    <StatusBadge status={u.status} signupSource={u.signupSource} />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
                     <RoleBadge role={u.role} />
@@ -375,17 +385,26 @@ function Avatar({ name }: { name: string }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  status,
+  signupSource,
+}: {
+  status: string;
+  signupSource?: string;
+}) {
+  const pending = status === "inactive" && signupSource === "invite";
   return (
     <span
       className={cn(
         "inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize",
         status === "active"
           ? "bg-success-bg text-success"
-          : "bg-bg-muted text-muted"
+          : pending
+            ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+            : "bg-bg-muted text-muted"
       )}
     >
-      {status}
+      {pending ? "Pending" : status}
     </span>
   );
 }

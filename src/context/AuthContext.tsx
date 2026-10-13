@@ -129,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             : result.error || DEVICE_MISMATCH_MESSAGE,
       };
     }
-    setDeviceVerified(true);
+    setDeviceVerified((prev) => (prev ? prev : true));
     return { ok: true };
   }, [user]);
 
@@ -144,6 +144,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await firebaseLogout({ recordActivity: false });
       setUser(null);
       setDeviceVerified(false);
+      return;
+    }
+    if (
+      user.id === fresh.id &&
+      user.name === fresh.name &&
+      user.email === fresh.email &&
+      user.role === fresh.role &&
+      user.status === fresh.status
+    ) {
       return;
     }
     setUser({

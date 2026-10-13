@@ -68,7 +68,10 @@ function UsersPageContent() {
   };
 
   const openEdit = (user: AppUser) => {
-    setEditing(user);
+    setEditing({
+      ...user,
+      email: user.contactEmail || "",
+    });
     setModalMode("edit");
   };
 
@@ -313,7 +316,7 @@ function UsersPageContent() {
         message={
           toggling?.status === "active"
             ? "This user will no longer be able to log in."
-            : "This user will be allowed to log in again."
+            : "Activate after confirming payment. This user will be allowed to log in."
         }
         confirmLabel={
           toggling?.status === "active" ? "Deactivate" : "Activate"

@@ -31,7 +31,7 @@ export default function ProfilePage() {
       const full = await getFirebaseUserById(user.id);
       if (cancelled) return;
       setName(full?.name || user.name);
-      setEmail(full?.email || user.email || "");
+      setEmail(full?.contactEmail || "");
       setCreatedAt(full?.createdAt || user.createdAt);
       setStatus(full?.status || user.status);
     })();
@@ -104,7 +104,7 @@ export default function ProfilePage() {
           <dl className="grid gap-4 sm:grid-cols-2">
             <Info label="Full Name" value={user?.name || "—"} />
             <Info label="User ID" value={user?.id || "—"} />
-            <Info label="Email" value={user?.email || "—"} />
+            <Info label="Email" value={email || "—"} />
             <Info label="Role" value={user?.role || "—"} />
             <Info label="Status" value={status || "—"} />
             <Info label="Created Date" value={formatDisplayDate(createdAt)} />
@@ -139,8 +139,11 @@ export default function ProfilePage() {
                 className="field-input"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="required for login"
+                placeholder="optional contact email"
               />
+              <p className="mt-1 text-xs text-muted">
+                Sign-in uses your User ID and password. This email is only for contact.
+              </p>
             </div>
             <div>
               <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-text-secondary">
@@ -183,7 +186,7 @@ function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-caption font-medium">{label}</dt>
-      <dd className="mt-0.5 text-sm font-semibold capitalize text-text">
+      <dd className="mt-0.5 text-sm font-semibold text-text">
         {value}
       </dd>
     </div>

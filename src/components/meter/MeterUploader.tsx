@@ -5,6 +5,12 @@ import { Upload, ImageIcon, Camera } from "lucide-react";
 import { validateImageFile, verifyImageDecodable, cn } from "@/lib/utils";
 import { useToast } from "@/context/ToastContext";
 
+const SAMPLE_METERS = [
+  { src: "/meters/meter-1.jpg", fileName: "sample-meter-1.jpg", label: "Sample 1" },
+  { src: "/meters/meter-2.jpg", fileName: "sample-meter-2.jpg", label: "Sample 2" },
+  { src: "/meters/meter-3.jpg", fileName: "sample-meter-3.jpg", label: "Sample 3" },
+] as const;
+
 interface MeterUploaderProps {
   onFileSelect: (file: File, objectUrl: string) => void;
   disabled?: boolean;
@@ -16,6 +22,7 @@ export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [sampleSrc, setSampleSrc] = useState<string | null>(null);
 
   const clearInputs = useCallback(() => {
     if (inputRef.current) inputRef.current.value = "";
@@ -58,6 +65,35 @@ export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
       }
     },
     [clearInputs, onFileSelect, toast]
+  );
+
+  const openSample = useCallback(
+    async (sample: (typeof SAMPLE_METERS)[number]) => {
+      setChecking(true);
+      setSampleSrc(sample.src);
+      try {
+        const res = await fetch(sample.src);
+        if (!res.ok) throw new Error("Sample photo missing");
+        const blob = await res.blob();
+        const file = new File([blob], sample.fileName, {
+          type: blob.type || "image/jpeg",
+        });
+        const url = URL.createObjectURL(file);
+        const ok = await verifyImageDecodable(url);
+        if (!ok) {
+          URL.revokeObjectURL(url);
+          toast("Unable to open this sample photo.", "error");
+          return;
+        }
+        onFileSelect(file, url);
+      } catch {
+        toast("Unable to open this sample photo.", "error");
+      } finally {
+        setChecking(false);
+        setSampleSrc(null);
+      }
+    },
+    [onFileSelect, toast]
   );
 
   const busy = disabled || checking;
@@ -120,6 +156,31 @@ export function MeterUploader({ onFileSelect, disabled }: MeterUploaderProps) {
           <Upload className="h-5 w-5" aria-hidden="true" />
           Gallery / Files
         </button>
+      </div>
+      <div className="mt-6 w-full max-w-sm">
+        <p className="mb-2 text-xs font-medium text-muted">Or try a sample meter</p>
+        <div className="grid grid-cols-3 gap-2">
+          {SAMPLE_METERS.map((sample) => (
+            <button
+              key={sample.src}
+              type="button"
+              disabled={busy}
+              onClick={() => void openSample(sample)}
+              className="overflow-hidden rounded-xl border border-border bg-bg-muted text-left transition hover:border-primary/50 active:scale-[0.98] disabled:opacity-60"
+              aria-label={`Use ${sample.label}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={sample.src}
+                alt=""
+                className="aspect-[3/4] w-full object-cover"
+              />
+              <span className="block px-1.5 py-1.5 text-center text-[11px] font-semibold text-text">
+                {sampleSrc === sample.src ? "Opening..." : sample.label}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
       <p className="mt-4 text-xs text-muted">JPG, PNG, WEBP · Max 10 MB</p>
       <input

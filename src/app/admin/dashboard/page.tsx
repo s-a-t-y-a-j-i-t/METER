@@ -13,6 +13,7 @@ import {
   Activity,
   Settings,
   MonitorSmartphone,
+  Link2,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { StatCard } from "@/components/dashboard/StatCard";
@@ -161,8 +162,14 @@ export default function AdminDashboardPage() {
       <Card className="mb-6">
         <CardHeader title="Quick Actions" />
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Link href="/admin/users?action=create">
+          <Link href="/admin/invite">
             <Button className="min-h-11 w-full sm:w-auto">
+              <Link2 className="h-4 w-4" aria-hidden="true" />
+              Invite link
+            </Button>
+          </Link>
+          <Link href="/admin/users?action=create">
+            <Button variant="outline" className="min-h-11 w-full sm:w-auto">
               <UserPlus className="h-4 w-4" aria-hidden="true" />
               Create User
             </Button>
